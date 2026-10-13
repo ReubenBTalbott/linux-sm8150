@@ -20,6 +20,7 @@
 #define		_LINUX_NVT_TOUCH_H
 
 #include <linux/delay.h>
+#include <linux/gpio/consumer.h>
 #include <linux/input.h>
 #include <linux/of.h>
 #include <linux/spi/spi.h>
@@ -28,10 +29,6 @@
 #include "nt36xxx_mem_map.h"
 
 #define NVT_DEBUG 1
-
-//---GPIO number---
-#define NVTTOUCH_RST_PIN 980
-#define NVTTOUCH_INT_PIN 943
 
 #define PINCTRL_STATE_ACTIVE		"pmx_ts_active"
 #define PINCTRL_STATE_SUSPEND		"pmx_ts_suspend"
@@ -141,10 +138,8 @@ struct nvt_ts_data {
 	uint8_t max_touch_num;
 	uint8_t max_button_num;
 	uint32_t int_trigger_type;
-	int32_t irq_gpio;
-	uint32_t irq_flags;
-	int32_t reset_gpio;
-	uint32_t reset_flags;
+	struct gpio_desc *irq_gpio;
+	struct gpio_desc *reset_gpio;
 	struct mutex lock;
 	const struct nvt_ts_mem_map *mmap;
 	uint8_t carrier_system;
