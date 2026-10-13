@@ -26,9 +26,6 @@
 #include "../fts.h"
 
 /* HW DATA */
-#define GPIO_NOT_DEFINED	-1	/* /< value assumed by reset_gpio when
-					 * the reset pin of the IC is not
-					 * connected */
 
 
 #define ADDR_SIZE_HW_REG	BITS_32	/* /< value of AddrSize for Hw register
@@ -190,7 +187,7 @@ typedef struct {
 /** @}*/
 
 int initCore(struct fts_ts_info *info);
-void setResetGpio(int gpio);
+void setResetGpio(struct gpio_desc *gpio);
 int fts_system_reset(void);
 int isSystemResettedUp(void);
 int isSystemResettedDown(void);
