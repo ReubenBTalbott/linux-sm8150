@@ -1033,6 +1033,11 @@
 		IDH_PTYPE_DFP_HOST, 0, 0x18d1)
 		VDO_CERT(0x0)
 		VDO_PRODUCT(0x4ee1, 0x0)>;
+
+		sink-vdos-v1 = <VDO_IDH(1, 1, IDH_PTYPE_PERIPH, 0,
+		0, 0, 0x18d1)
+		VDO_CERT(0x0)
+		VDO_PRODUCT(0x4ee1, 0x0)>;
 		
 		ports {
 			#address-cells = <1>;
