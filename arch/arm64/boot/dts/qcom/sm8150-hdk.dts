@@ -817,24 +817,20 @@
 };
 
 &usb_1 {
+	dr_mode = "otg";
+	usb-role-switch;
+
 	status = "okay";
 };
 
 &usb_2 {
-	status = "okay";
-};
+	dr_mode = "host";
 
-&usb_1_dwc3 {
-	dr_mode = "otg";
-	usb-role-switch;
+	status = "okay";
 };
 
 &usb_1_dwc3_hs {
 	remote-endpoint = <&pm8150b_hs_in>;
-};
-
-&usb_2_dwc3 {
-	dr_mode = "host";
 };
 
 &wifi {
