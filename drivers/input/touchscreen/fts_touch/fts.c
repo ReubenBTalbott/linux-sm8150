@@ -50,8 +50,8 @@
 #include <linux/device.h>
 #include <linux/of.h>
 #include <linux/version.h>
-#include <linux/gpio.h>
-#include <linux/of_gpio.h>
+#include <linux/gpio/consumer.h>
+#include <linux/hex.h>
 #include <linux/regulator/consumer.h>
 #include <linux/pinctrl/consumer.h>
 // #include <linux/notifier.h>
@@ -4509,8 +4509,8 @@ int fts_chip_powercycle(struct fts_ts_info *info)
 				__func__);
 	}
 
-	if (info->board->reset_gpio != GPIO_NOT_DEFINED)
-		gpio_set_value(info->board->reset_gpio, 0);
+	if (info->board->reset_gpio)
+		gpiod_set_value(info->board->reset_gpio, 0);
 	else
 		mdelay(300);
 
@@ -4535,10 +4535,10 @@ int fts_chip_powercycle(struct fts_ts_info *info)
 			 * values */
 
 
-	if (info->board->reset_gpio != GPIO_NOT_DEFINED) {
+	if (info->board->reset_gpio) {
 		mdelay(10);	/* time to wait before bring up the reset
 				  * gpio after the power up of the regulators */
-		gpio_set_value(info->board->reset_gpio, 1);
+		gpiod_set_value(info->board->reset_gpio, 1);
 	}
 
 	release_all_touches(info);
@@ -4767,15 +4767,15 @@ static int fts_mode_handler(struct fts_ts_info *info, int force)
 static void fts_set_switch_gpio(struct fts_ts_info *info, int gpio_value)
 {
 	int retval;
-	unsigned int gpio = info->board->switch_gpio;
+	struct gpio_desc *gpio = info->board->switch_gpio;
 
-	if (!gpio_is_valid(gpio))
+	if (!gpio)
 		return;
 
 	pr_debug("%s: toggling i2c switch to %s\n", __func__,
 		 gpio_value == FTS_SWITCH_GPIO_VALUE_AP_MASTER ? "AP" : "SLPI");
 
-	retval = gpio_direction_output(gpio, gpio_value);
+	retval = gpiod_direction_output(gpio, gpio_value);
 	if (retval < 0)
 		pr_err("%s: Failed to toggle switch_gpio, err = %d\n",
 			__func__, retval);
@@ -5089,98 +5089,23 @@ exit:
 }
 
 /**
-  * Configure a GPIO according to the parameters
-  * @param gpio gpio number
-  * @param config if true, the gpio is set up otherwise it is free
-  * @param dir direction of the gpio, 0 = in, 1 = out
-  * @param state initial value (if the direction is in, this parameter is
-  * ignored)
-  * return error code
+  * Set the display rate gpio (if present) and, if the Reset Gpio is present,
+  * perform a cycle LOW-HIGH in order to assure that the IC has been reset
+  * properly
   */
-static int fts_gpio_setup(int gpio, bool config, int dir, int state)
+static void fts_set_gpio(struct fts_ts_info *info)
 {
-	int retval = 0;
-	unsigned char buf[16];
+	struct fts_hw_platform_data *bdata = info->board;
 
-	if (config) {
-		scnprintf(buf, sizeof(buf), "fts_gpio_%u\n", gpio);
+	if (bdata->disp_rate_gpio)
+		gpiod_set_value(bdata->disp_rate_gpio,
+				info->display_refresh_rate == 90);
 
-		retval = gpio_request(gpio, buf);
-		if (retval) {
-			pr_err("%s: Failed to get gpio %d (code: %d)",
-				__func__, gpio, retval);
-			return retval;
-		}
-
-		if (dir == 0)
-			retval = gpio_direction_input(gpio);
-		else
-			retval = gpio_direction_output(gpio, state);
-		if (retval) {
-			pr_err("%s: Failed to set gpio %d direction",
-				__func__, gpio);
-			return retval;
-		}
-	} else
-		gpio_free(gpio);
-
-	return retval;
-}
-
-/**
-  * Setup the IRQ and RESET (if present) gpios.
-  * If the Reset Gpio is present it will perform a cycle HIGH-LOW-HIGH in order
-  * to assure that the IC has been reset properly
-  */
-static int fts_set_gpio(struct fts_ts_info *info)
-{
-	int retval;
-	struct fts_hw_platform_data *bdata =
-		info->board;
-
-	retval = fts_gpio_setup(bdata->irq_gpio, true, 0, 0);
-	if (retval < 0) {
-		pr_err("%s: Failed to configure irq GPIO\n", __func__);
-		goto err_gpio_irq;
-	}
-
-	if (gpio_is_valid(bdata->switch_gpio)) {
-		retval = fts_gpio_setup(bdata->switch_gpio, true, 1,
-					FTS_SWITCH_GPIO_VALUE_AP_MASTER);
-		if (retval < 0)
-			pr_err("%s: Failed to configure I2C switch\n",
-				__func__);
-	}
-
-	if (gpio_is_valid(bdata->disp_rate_gpio)) {
-		retval = fts_gpio_setup(bdata->disp_rate_gpio, true, 1,
-					(info->display_refresh_rate == 90));
-		if (retval < 0)
-			pr_err("%s: Failed to configure disp_rate_gpio\n",
-				__func__);
-	}
-
-	if (bdata->reset_gpio >= 0) {
-		retval = fts_gpio_setup(bdata->reset_gpio, true, 1, 0);
-		if (retval < 0) {
-			pr_err("%s: Failed to configure reset GPIO\n",
-				__func__);
-			goto err_gpio_reset;
-		}
-	}
-	if (bdata->reset_gpio >= 0) {
-		gpio_set_value(bdata->reset_gpio, 0);
+	if (bdata->reset_gpio) {
+		gpiod_set_value(bdata->reset_gpio, 0);
 		mdelay(10);
-		gpio_set_value(bdata->reset_gpio, 1);
+		gpiod_set_value(bdata->reset_gpio, 1);
 	}
-
-	return OK;
-
-err_gpio_reset:
-	fts_gpio_setup(bdata->irq_gpio, false, 0, 0);
-	bdata->reset_gpio = GPIO_NOT_DEFINED;
-err_gpio_irq:
-	return retval;
 }
 
 /**
@@ -5201,11 +5126,18 @@ static int parse_dt(struct device *dev, struct fts_hw_platform_data *bdata)
 	struct device_node *np = dev->of_node;
 	u32 coords[2];
 
-	bdata->switch_gpio = of_get_named_gpio(np, "st,switch_gpio", 0);
-	pr_info("switch_gpio = %d\n", bdata->switch_gpio);
+	bdata->switch_gpio =
+		devm_gpiod_get_optional(dev, "st,switch",
+					FTS_SWITCH_GPIO_VALUE_AP_MASTER ?
+					GPIOD_OUT_HIGH : GPIOD_OUT_LOW);
+	if (IS_ERR(bdata->switch_gpio))
+		return dev_err_probe(dev, PTR_ERR(bdata->switch_gpio),
+				     "Failed to get the switch GPIO\n");
 
-	bdata->irq_gpio =  of_get_named_gpio(np, "st,irq-gpio", 0);
-	pr_info("irq_gpio = %d\n", bdata->irq_gpio);
+	bdata->irq_gpio = devm_gpiod_get(dev, "st,irq", GPIOD_IN);
+	if (IS_ERR(bdata->irq_gpio))
+		return dev_err_probe(dev, PTR_ERR(bdata->irq_gpio),
+				     "Failed to get the irq GPIO\n");
 
 	retval = of_property_read_string(np, "st,regulator_dvdd", &name);
 	if (retval == -EINVAL)
@@ -5227,17 +5159,17 @@ static int parse_dt(struct device *dev, struct fts_hw_platform_data *bdata)
 		pr_info("bus_reg_name = %s\n", name);
 	}
 
-	if (of_property_read_bool(np, "st,reset-gpio")) {
-		bdata->reset_gpio = of_get_named_gpio(np, "st,reset-gpio", 0);
-		pr_info("reset_gpio = %d\n", bdata->reset_gpio);
-	} else
-		bdata->reset_gpio = GPIO_NOT_DEFINED;
+	bdata->reset_gpio = devm_gpiod_get_optional(dev, "st,reset",
+						    GPIOD_OUT_LOW);
+	if (IS_ERR(bdata->reset_gpio))
+		return dev_err_probe(dev, PTR_ERR(bdata->reset_gpio),
+				     "Failed to get the reset GPIO\n");
 
-	if (of_property_read_bool(np, "st,disp-rate-gpio")) {
-		bdata->disp_rate_gpio = of_get_named_gpio(np, "st,disp-rate-gpio", 0);
-		pr_info("disp_rate_gpio = %d\n", bdata->disp_rate_gpio);
-	} else
-		bdata->disp_rate_gpio = GPIO_NOT_DEFINED;
+	bdata->disp_rate_gpio = devm_gpiod_get_optional(dev, "st,disp-rate",
+							GPIOD_OUT_LOW);
+	if (IS_ERR(bdata->disp_rate_gpio))
+		return dev_err_probe(dev, PTR_ERR(bdata->disp_rate_gpio),
+				     "Failed to get the display rate GPIO\n");
 
 	bdata->auto_fw_update = true;
 	if (of_property_read_bool(np, "st,disable-auto-fw-update")) {
@@ -5372,12 +5304,8 @@ static int fts_probe(struct spi_device *client)
 	}
 
 	pr_info("SET GPIOS:\n");
-	retval = fts_set_gpio(info);
-	if (retval < 0) {
-		pr_err("%s: ERROR Failed to set up GPIO's\n", __func__);
-		goto ProbeErrorExit_2;
-	}
-	info->client->irq = gpio_to_irq(info->board->irq_gpio);
+	fts_set_gpio(info);
+	info->client->irq = gpiod_to_irq(info->board->irq_gpio);
 
 	pr_info("SET Event Handler:\n");
 
@@ -5762,16 +5690,6 @@ static void fts_remove(struct spi_device *client)
 
 	fts_enable_reg(info, false);
 	fts_get_reg(info, false);
-
-	/* free gpio */
-	if (gpio_is_valid(info->board->irq_gpio))
-		gpio_free(info->board->irq_gpio);
-	if (gpio_is_valid(info->board->switch_gpio))
-		gpio_free(info->board->switch_gpio);
-	if (gpio_is_valid(info->board->reset_gpio))
-		gpio_free(info->board->reset_gpio);
-	if (gpio_is_valid(info->board->disp_rate_gpio))
-		gpio_free(info->board->disp_rate_gpio);
 
 	/* free any extinfo */
 	kfree(info->extinfo.data);

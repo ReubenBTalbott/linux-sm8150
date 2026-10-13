@@ -22,7 +22,7 @@
 #include <linux/delay.h>
 #include <linux/slab.h>
 #include <linux/interrupt.h>
-#include <linux/gpio.h>
+#include <linux/gpio/consumer.h>
 #include "ftsCompensation.h"
 #include "ftsCore.h"
 #include "ftsError.h"
@@ -39,9 +39,7 @@ SysInfo systemInfo;	/* Global System Info variable, accessible in all the
 			 * driver */
 /** @}*/
 
-static int reset_gpio = GPIO_NOT_DEFINED;/* /< gpio number of the rest pin,
-					  * the value is  GPIO_NOT_DEFINED
-					  * if the reset pin is not connected */
+static struct gpio_desc *reset_gpio;	/* /< reset pin, NULL if not connected */
 static int system_reseted_up;	/* /< flag checked during resume to understand
 				 * if there was a system reset
 				 * and restore the proper state */
@@ -75,14 +73,13 @@ int initCore(struct fts_ts_info *info)
 }
 
 /**
-  * Set the reset_gpio variable with the actual gpio number of the board link to
-  * the reset pin
-  * @param gpio gpio number link to the reset pin of the IC
+  * Set the reset_gpio variable with the gpio of the board linked to the reset
+  * pin
+  * @param gpio reset pin of the IC, NULL if there is none
   */
-void setResetGpio(int gpio)
+void setResetGpio(struct gpio_desc *gpio)
 {
 	reset_gpio = gpio;
-	pr_info("setResetGpio: reset_gpio = %d\n", reset_gpio);
 }
 
 /**
@@ -108,14 +105,14 @@ int fts_system_reset(void)
 		/* disable interrupt before resetting to be able to get boot
 		 * events */
 
-		if (reset_gpio == GPIO_NOT_DEFINED)
+		if (!reset_gpio)
 			res = fts_writeU8UX(FTS_CMD_HW_REG_W, ADDR_SIZE_HW_REG,
 					    ADDR_SYSTEM_RESET, data, ARRAY_SIZE(
 						    data));
 		else {
-			gpio_set_value(reset_gpio, 0);
+			gpiod_set_value(reset_gpio, 0);
 			msleep(10);
-			gpio_set_value(reset_gpio, 1);
+			gpiod_set_value(reset_gpio, 1);
 			res = OK;
 		}
 		if (res < OK)
