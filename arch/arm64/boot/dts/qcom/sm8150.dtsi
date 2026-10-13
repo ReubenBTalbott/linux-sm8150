@@ -3681,7 +3681,7 @@
 
 			usb_1_dwc3: usb@a600000 {
 				compatible = "snps,dwc3";
-				reg = <0 0x0a600000 0 0xcd00>;
+				reg = <0 0x0a600000 0 0xe000>;
 				interrupts = <GIC_SPI 133 IRQ_TYPE_LEVEL_HIGH>;
 				iommus = <&apps_smmu 0x140 0>;
 				snps,dis_u2_susphy_quirk;
@@ -3761,7 +3761,7 @@
 
 			usb_2_dwc3: usb@a800000 {
 				compatible = "snps,dwc3";
-				reg = <0 0x0a800000 0 0xcd00>;
+				reg = <0 0x0a800000 0 0xe000>;
 				interrupts = <GIC_SPI 138 IRQ_TYPE_LEVEL_HIGH>;
 				iommus = <&apps_smmu 0x160 0>;
 				snps,dis_u2_susphy_quirk;
