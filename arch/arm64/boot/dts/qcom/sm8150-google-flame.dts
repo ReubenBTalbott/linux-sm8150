@@ -1050,12 +1050,12 @@
 				};
 			};
 
-			// port@1 {
-			// 	reg = <1>;
-			// 	pm8150b_typec_mux_in: endpoint {
-			// 		remote-endpoint = <&usb_1_qmpphy_out>;
-			// 	};
-			// };
+			port@1 {
+				reg = <1>;
+				pm8150b_typec_mux_in: endpoint {
+					remote-endpoint = <&usb_1_qmpphy_out>;
+				};
+			};
 		};
 	};
 };
@@ -1138,8 +1138,6 @@
 
 &usb_1 {
 	status = "okay";
-	/* USB 2.0 only */
-	qcom,select-utmi-as-pipe-clk;
 };
 
 &usb_1_dwc3 {
@@ -1150,15 +1148,7 @@
 	snps,has-lpm-erratum;
 	snps,hird-threshold = /bits/ 8 <0x10>;
 	snps,ssp-u3-u0-quirk;
-	snps,dis-u1-entry-quirk;
-	snps,dis-u2-entry-quirk;
 	tx-fifo-resize;
-
-
-	/* Remove USB3 phy */
-	phys = <&usb_1_hsphy>;
-	phy-names = "usb2-phy";
-	maximum-speed = "high-speed";
 };
 
 &usb_1_dwc3_hs {
@@ -1565,14 +1555,13 @@
 // 	status = "disabled";
 // };
 
-// When enabled the kernel crash
-// &usb_1_qmpphy {
-// 	status = "okay";
-// 	orientation-switch;
-// 	vdda-phy-supply = <&vreg_l3c_1p2>;
-// 	vdda-pll-supply = <&vreg_l5a_0p88>;
-// };
+&usb_1_qmpphy {
+	status = "okay";
+	orientation-switch;
+	vdda-phy-supply = <&vreg_l3c_1p2>;
+	vdda-pll-supply = <&vreg_l5a_0p88>;
+};
 
-// &usb_1_qmpphy_out {
-// 	remote-endpoint = <&pm8150b_typec_mux_in>;
-// };
+&usb_1_qmpphy_out {
+	remote-endpoint = <&pm8150b_typec_mux_in>;
+};
