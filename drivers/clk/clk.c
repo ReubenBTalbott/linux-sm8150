@@ -3843,11 +3843,25 @@ static void clk_core_reparent_orphans_nolock(void)
 		 * properly migrate any prepare/enable count of the orphan
 		 * clock. This is important for CLK_IS_CRITICAL clocks, which
 		 * are enabled during init but might not have a parent yet.
+		 *
+		 * An orphan that is not prepared has no count to migrate, and
+		 * adopting it only updates the clk tree topology: its
+		 * .set_parent() is not called. Don't bounce the new parent on
+		 * and off for CLK_OPS_PARENT_ENABLE clocks in that case, as
+		 * that can glitch or shut down a parent the bootloader left
+		 * running.
 		 */
 		if (parent) {
 			/* update the clk tree topology */
-			__clk_set_parent_before(orphan, parent);
-			__clk_set_parent_after(orphan, parent, NULL);
+			if (orphan->prepare_count) {
+				__clk_set_parent_before(orphan, parent);
+				__clk_set_parent_after(orphan, parent, NULL);
+			} else {
+				unsigned long flags = clk_enable_lock();
+
+				clk_reparent(orphan, parent);
+				clk_enable_unlock(flags);
+			}
 			__clk_recalc_accuracies(orphan);
 			__clk_recalc_rates(orphan, true, 0);
 
