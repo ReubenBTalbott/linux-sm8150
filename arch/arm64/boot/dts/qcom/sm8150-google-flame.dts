@@ -1001,6 +1001,8 @@
 };
 
 &pm8150b_vbus {
+	regulator-min-microamp = <500000>;
+	regulator-max-microamp = <1500000>;
 	status = "okay";
 };
 
@@ -1010,6 +1012,7 @@
 
 	connector {
 		compatible = "usb-c-connector";
+		vbus-supply = <&pm8150b_vbus>;
 		
 		power-role = "dual";
 		data-role = "dual";
