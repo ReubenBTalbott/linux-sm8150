@@ -1329,11 +1329,6 @@
 	};
 };
 
-&spi6 {
-	status = "okay";
-	/* google,citadel @ 0 */
-};
-
 &i2c7 {
 	status = "okay";
 	clock-frequency = <400000>;
@@ -1349,11 +1344,6 @@
 		interrupt-parent = <&spmi_bus>;
 		interrupts = <0x2 0xc7 0x0 IRQ_TYPE_LEVEL_LOW>;
 	};
-};
-
-&spi8 {
-	status = "okay";
-	/* st,st54j_se @ 0 */
 };
 
 &i2c9 {
@@ -1476,16 +1466,6 @@
 			};
 		};
 	};
-};
-
-&spi10 {
-	status = "okay";
-	/* abc,airbrush-spi @ 0 */
-};
-
-&spi11 {
-	status = "okay";
-	/* knowles,iaxxx-spi @ 0 */
 };
 
 &i2c15{
