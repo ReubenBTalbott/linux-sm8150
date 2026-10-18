@@ -1343,6 +1343,7 @@ static int qcom_fg_probe(struct platform_device *pdev)
 		if (ret) {
 			dev_err(chip->dev, "Failed to register notifier: %d\n",
 				ret);
+			power_supply_put(chip->chg_psy);
 			return ret;
 		}
 	}
@@ -1353,6 +1354,12 @@ static int qcom_fg_probe(struct platform_device *pdev)
 static void qcom_fg_remove(struct platform_device *pdev)
 {
 	struct qcom_fg_chip *chip = platform_get_drvdata(pdev);
+
+	if (chip->chg_psy) {
+		power_supply_unreg_notifier(&chip->nb);
+		cancel_delayed_work_sync(&chip->status_changed_work);
+		power_supply_put(chip->chg_psy);
+	}
 
 	power_supply_put_battery_info(chip->batt_psy, chip->batt_info);
 
