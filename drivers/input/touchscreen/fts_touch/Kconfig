@@ -5,6 +5,8 @@
 menuconfig TOUCHSCREEN_STM_FTS_DOWNSTREAM
 	tristate "STMicroelectronics multitouch touchscreen - FingerTipS (FTM5)"
 	select TOUCHSCREEN_HEATMAP
+	# Follows the display panel, so it can't be built in with DRM=m
+	depends on DRM || !DRM
 	help
 	  Say Y or M here to enable STMicroelectronics (FTM5) touchscreen support.
 	  If unsure, say N.

@@ -1245,7 +1245,7 @@
 	status = "okay";
 	vdda-supply = <&vreg_l3c_1p2>;
 	
-	panel@0 {
+	panel: panel@0 {
 		compatible = "lg,nt37280-lh568wf3-ed01";
 		reg = <0>;
 		
@@ -1310,6 +1310,8 @@
 		reg = <0>;
 		interrupt-parent = <&tlmm>;
 		interrupts = <122 IRQ_TYPE_LEVEL_LOW>;
+
+		panel = <&panel>;
 		vdd-supply = <&vreg_l14a_1p8>;
 		avdd-supply = <&vreg_l17a_3p0>;
 
