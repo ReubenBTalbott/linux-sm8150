@@ -1199,6 +1199,11 @@
 	};
 };
 
+/* No sound card yet, so there are no ASM streams to expose */
+&q6asmdai {
+	status = "disabled";
+};
+
 &qupv3_id_0 {
 	status = "okay";
 };
