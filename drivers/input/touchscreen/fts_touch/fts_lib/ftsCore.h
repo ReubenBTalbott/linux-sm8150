@@ -26,6 +26,8 @@
 #include "../fts.h"
 
 /* HW DATA */
+#define NO_INIT			0	/* /< No initialization required */
+#define RETRY_INIT_BOOT		3	/* /< init attempts at boot */
 
 
 #define ADDR_SIZE_HW_REG	BITS_32	/* /< value of AddrSize for Hw register
@@ -210,4 +212,5 @@ int setActiveScanFrequency(u32 freq);
 int writeHostDataMemory(u8 type, u8 *data, u8 msForceLen, u8 msSenseLen,
 			u8 ssForceLen, u8 ssSenseLen, int save);
 int saveMpFlag(u8 mpflag);
+int fts_ic_initialization(u8 type);
 #endif	/* FTS_CORE_H */

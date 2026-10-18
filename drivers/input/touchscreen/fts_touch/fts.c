@@ -77,7 +77,6 @@
 #include "fts_lib/ftsFlash.h"
 #include "fts_lib/ftsFrame.h"
 #include "fts_lib/ftsGesture.h"
-#include "fts_lib/ftsTest.h"
 #include "fts_lib/ftsTime.h"
 #include "fts_lib/ftsTool.h"
 
@@ -110,7 +109,6 @@
 
 
 extern SysInfo systemInfo;
-extern TestToDo tests;
 #ifdef GESTURE_MODE
 extern struct mutex gestureMask_mutex;
 #endif
@@ -118,11 +116,6 @@ extern struct mutex gestureMask_mutex;
 char fts_ts_phys[64];	/* /< buffer which store the input device name
 			  *	assigned by the kernel */
 
-static u32 typeOfCommand[CMD_STR_LEN] = { 0 };	/* /< buffer used to store the
-						  * command sent from the MP
-						  * device file node */
-static int numberParameters;	/* /< number of parameter passed through the MP
-				  * device file node */
 #ifdef USE_ONE_FILE_NODE
 static int feature_feasibility = ERROR_OP_NOT_ALLOW;
 #endif
@@ -423,114 +416,6 @@ exit:
 	fts_set_bus_ref(info, FTS_BUS_REF_SYSFS, false);
 	return written;
 }
-
-#if 0
-/**
-  * File node to obtain and show strength frame
-  * cat strength_frame			to obtain strength data \n
-  * the string returned in the shell is made up as follow: \n
-  * { = start byte \n
-  * X1X2X3X4 = 4 bytes in HEX format which represent an error code (00000000 no
-  *error) \n
-  * **** if error code is all 0s **** \n
-  * FF = 1 byte in HEX format number of rows \n
-  * SS = 1 byte in HEX format number of columns \n
-  * N1, ... = the decimal value of each node separated by a coma \n
-  * ********************************* \n
-  * } = end byte
-  */
-static ssize_t fts_strength_frame_show(struct device *dev,
-				struct device_attribute *attr, char *buf)
-{
-	MutualSenseFrame frame;
-	int res, count, j, size = (6 * 2) + 1, index = 0;
-	char *all_strbuff = NULL;
-	/* char buff[CMD_STR_LEN] = {0}; */
-	/* struct i2c_client *client = to_i2c_client(dev); */
-	struct fts_ts_info *info = dev_get_drvdata(dev);
-
-	frame.node_data = NULL;
-
-	res = fts_enableInterrupt(false);
-	if (res < OK)
-		goto END;
-
-	res = senseOn();
-	if (res < OK) {
-		pr_err("%s: could not start scanning! ERROR %08X\n",
-			__func__, res);
-		goto END;
-	}
-	mdelay(WAIT_FOR_FRESH_FRAMES);
-	res = senseOff();
-	if (res < OK) {
-		pr_err("%s: could not finish scanning! ERROR %08X\n",
-			__func__, res);
-		goto END;
-	}
-
-	mdelay(WAIT_AFTER_SENSEOFF);
-	flushFIFO();
-
-	res = getMSFrame3(MS_STRENGTH, &frame);
-	if (res < OK) {
-		pr_err("%s: could not get the frame! ERROR %08X\n",
-			__func__, res);
-		goto END;
-	} else {
-		size += (res * 6);
-		pr_info("The frame size is %d words\n", res);
-		res = OK;
-		print_frame_short("MS Strength frame =", array1dTo2d_short(
-					  frame.node_data, frame.node_data_size,
-					  frame.header.sense_node),
-				  frame.header.force_node,
-				  frame.header.sense_node);
-	}
-
-END:
-	flushFIFO();
-	release_all_touches(info);
-	fts_mode_handler(info, 1);
-
-	all_strbuff = (char *)kzalloc(size * sizeof(char), GFP_KERNEL);
-
-	if (all_strbuff != NULL) {
-		snprintf(&all_strbuff[index], 11, "{ %08X", res);
-
-		index += 10;
-
-		if (res >= OK) {
-			snprintf(&all_strbuff[index], 3, "%02X",
-				 (u8)frame.header.force_node);
-			index += 2;
-			snprintf(&all_strbuff[index], 3, "%02X",
-				 (u8)frame.header.sense_node);
-
-			index += 2;
-
-			for (j = 0; j < frame.node_data_size; j++) {
-				snprintf(&all_strbuff[index], 10, "%d,%n",
-					 frame.node_data[j], &count);
-				index += count;
-			}
-
-			kfree(frame.node_data);
-		}
-
-		snprintf(&all_strbuff[index], 3, " }");
-		index += 2;
-
-		count = snprintf(buf, TSP_BUF_SIZE, "%s\n", all_strbuff);
-		kfree(all_strbuff);
-	} else
-		pr_err("%s: Unable to allocate all_strbuff! ERROR %08X\n",
-			__func__, ERROR_ALLOC);
-
-	fts_enableInterrupt(true);
-	return count;
-}
-#endif
 
 /***************************************** FEATURES
   ***************************************************/
@@ -1709,756 +1594,6 @@ out:
 	return retval;
 }
 
-/***************************************** PRODUCTION TEST
-  ***************************************************/
-
-/**
-  * File node to execute the Mass Production Test or to get data from the IC
-  * (raw or ms/ss init data)
-  * echo cmd > stm_fts_cmd	to execute a command \n
-  * cat stm_fts_cmd	to show the result of the command \n
-  * echo cmd > stm_fts_cmd; cat stm_fts_cmd	to execute and show the result
-  * in just one call \n
-  * the string returned in the shell is made up as follow: \n
-  * { = start byte \n
-  * X1X2X3X4 = 4 bytes in HEX format which represent an error_code (00000000 =
-  * OK)\n
-  * (optional) data = data coming from the command executed represented as HEX
-  * string \n
-  *                   Not all the command return additional data \n
-  * } = end byte \n
-  * \n
-  * Possible commands (cmd): \n
-  * - 00 = MP Test -> return error_code \n
-  * - 01 = ITO Test -> return error_code \n
-  * - 03 = MS Raw Test -> return error_code \n
-  * - 04 = MS Init Data Test -> return error_code \n
-  * - 05 = SS Raw Test -> return error_code \n
-  * - 06 = SS Init Data Test -> return error_code \n
-  * - 13 = Read 1 MS Raw Frame -> return additional data: MS frame row after row
-  * \n
-  * - 14 = Read MS Init Data -> return additional data: MS init data row after
-  * row \n
-  * - 15 = Read 1 SS Raw Frame -> return additional data: SS frame,
-  * force channels followed by sense channels \n
-  * - 16 = Read SS Init Data -> return additional data: SS Init data,
-  * first IX for force and sense channels and then CX for force and sense
-  * channels \n
-  * - F0 = Perform a system reset -> return error_code \n
-  * - F1 = Perform a system reset and reenable the sensing and the interrupt
-  */
-static ssize_t stm_fts_cmd_store(struct device *dev,
-				struct device_attribute *attr, const char *buf,
-				size_t count)
-{
-	u8 result, n = 0;
-	struct fts_ts_info *info = dev_get_drvdata(dev);
-	char *p, *temp_buf, *token;
-	size_t token_len = 0;
-	ssize_t retval = count;
-
-	if (!count) {
-		pr_err("%s: Invalid input buffer length!\n", __func__);
-		retval = -EINVAL;
-		goto out;
-	}
-
-	if (!info) {
-		pr_err("%s: Unable to access driver data\n", __func__);
-		retval = -EINVAL;
-		goto out;
-	}
-
-	if (!mutex_trylock(&info->diag_cmd_lock)) {
-		pr_err("%s: Blocking concurrent access\n", __func__);
-		retval = -EBUSY;
-		goto out;
-	}
-
-	memset(typeOfCommand, 0, sizeof(typeOfCommand));
-
-	temp_buf = kstrdup(buf, GFP_KERNEL);
-	if (!temp_buf) {
-		pr_err("%s: memory allocation failed!",
-			__func__);
-		retval = -ENOMEM;
-		goto unlock;
-	}
-
-	p = temp_buf;
-
-	/* Parse the input string to retrieve 2 hex-digit width cmds/args
-	 * separated by one or more spaces.
-	 * Any input not equal to 2 hex-digit width are ignored.
-	 * A single 2 hex-digit width  command w/ or w/o space is allowed.
-	 * Inputs not in the valid hex range are also ignored.
-	 * In case of encountering any of the above failure, the entire input
-	 * buffer is discarded.
-	 */
-	while (p && (n < CMD_STR_LEN)) {
-
-		while (isspace(*p)) {
-			p++;
-		}
-
-		token = strsep(&p, " ");
-
-		if (!token || *token == '\0') {
-			break;
-		}
-
-		token_len = strlen(token);
-
-		/* handle last token case */
-		if (token_len == 3 && token[2] == '\n')
-			token[2] = '\0';
-		else if (token_len != 2) {
-			pr_err("%s: bad len. len=%zu\n",
-				 __func__, token_len);
-			n = 0;
-			break;
-		}
-
-		if (kstrtou8(token, 16, &result)) {
-			/* Conversion failed due to bad input.
-			* Discard the entire buffer.
-			*/
-			pr_err("%s: bad input\n", __func__);
-			n = 0;
-			break;
-		}
-
-		/* found a valid cmd/args */
-		typeOfCommand[n] = result;
-		pr_info("%s: typeOfCommand[%d]=%02X\n",
-			__func__, n, typeOfCommand[n]);
-
-		n++;
-	}
-
-	if (n == 0) {
-		pr_err("%s: Found invalid cmd/arg\n", __func__);
-		retval = -EINVAL;
-	}
-
-	numberParameters = n;
-	pr_info("%s: Number of Parameters = %d\n", __func__, numberParameters);
-
-	kfree(temp_buf);
-
-unlock:
-	mutex_unlock(&info->diag_cmd_lock);
-out:
-	return retval;
-}
-
-static ssize_t stm_fts_cmd_show(struct device *dev,
-				struct device_attribute *attr, char *buf)
-{
-	int res, j, doClean = 0, index = 0;
-	int size = (6 * 2) + 1;
-	int nodes = 0;
-	int init_type = SPECIAL_PANEL_INIT;
-	u8 *all_strbuff = buf;
-	struct fts_ts_info *info = dev_get_drvdata(dev);
-	const char *limits_file = info->board->limits_name;
-
-	MutualSenseData compData;
-	SelfSenseData comData;
-	MutualSenseFrame frameMS;
-	SelfSenseFrame frameSS;
-
-	u8 report = 0;
-
-	if (!info) {
-		pr_err("%s: Unable to access driver data\n", __func__);
-		return  -EINVAL;
-	}
-
-	if (!mutex_trylock(&info->diag_cmd_lock)) {
-		pr_err("%s: Blocking concurrent access\n", __func__);
-		return -EBUSY;
-	}
-
-	if (fts_set_bus_ref(info, FTS_BUS_REF_SYSFS, true) < 0) {
-		res = ERROR_BUS_WR;
-		pr_err("%s: bus is not accessible.\n", __func__);
-		scnprintf(buf, PAGE_SIZE, "{ %08X }\n", res);
-		fts_set_bus_ref(info, FTS_BUS_REF_SYSFS, false);
-		mutex_unlock(&info->diag_cmd_lock);
-		return 0;
-	}
-
-	if (numberParameters >= 1) {
-		res = fts_enableInterrupt(false);
-		if (res < 0) {
-			pr_err("fts_enableInterrupt: ERROR %08X\n", res);
-			res = (res | ERROR_DISABLE_INTER);
-			goto END;
-		}
-
-		switch (typeOfCommand[0]) {
-		/*ITO TEST*/
-		case 0x01:
-			frameMS.node_data = NULL;
-			res = production_test_ito(limits_file, &tests,
-				&frameMS);
-			/* report MS raw frame only if was successfully
-			 * acquired */
-			if (frameMS.node_data != NULL) {
-				size += (frameMS.node_data_size *
-						sizeof(short) + 2) * 2;
-				report = 1;
-			}
-			break;
-
-		/*PRODUCTION TEST*/
-		case 0x02:
-			if (systemInfo.u8_cfgAfeVer != systemInfo.u8_cxAfeVer) {
-				res = ERROR_OP_NOT_ALLOW;
-				pr_err("Miss match in CX version! MP test not allowed with wrong CX memory! ERROR %08X\n",
-					res);
-				break;
-			}
-			res = production_test_initialization(init_type);
-			break;
-
-		case 0x00:
-#ifndef COMPUTE_INIT_METHOD
-			if (systemInfo.u8_cfgAfeVer != systemInfo.u8_cxAfeVer) {
-				res = ERROR_OP_NOT_ALLOW;
-				pr_err("Miss match in CX version! MP test not allowed with wrong CX memory! ERROR %08X\n",
-					res);
-				break;
-			}
-#else
-			if (systemInfo.u8_mpFlag != MP_FLAG_FACTORY) {
-				init_type = SPECIAL_FULL_PANEL_INIT;
-				pr_info("Select Full Panel Init!\n");
-			} else {
-				init_type = NO_INIT;
-				pr_info("Skip Full Panel Init!\n");
-			}
-#endif
-			res = production_test_main(limits_file, 1, init_type,
-						   &tests, MP_FLAG_FACTORY);
-			break;
-
-		/*read mutual raw*/
-		case 0x13:
-			pr_info("Get 1 MS Frame\n");
-			if (numberParameters >= 2 &&
-				typeOfCommand[1] == LOCKED_LP_ACTIVE)
-				setScanMode(SCAN_MODE_LOCKED, LOCKED_LP_ACTIVE);
-			else
-				setScanMode(SCAN_MODE_LOCKED, LOCKED_ACTIVE);
-			msleep(WAIT_FOR_FRESH_FRAMES);
-			setScanMode(SCAN_MODE_ACTIVE, 0x00);
-			msleep(WAIT_AFTER_SENSEOFF);
-			/* Delete the events related to some touch
-			 * (allow to call this function while touching
-			 * the screen without having a flooding of the
-			 * FIFO)
-			 */
-			flushFIFO();
-			res = getMSFrame3(MS_RAW, &frameMS);
-			if (res < 0) {
-				pr_err("Error while taking the MS frame... ERROR %08X\n",
-					res);
-			} else {
-				pr_info("The frame size is %d words\n",
-					res);
-#ifdef RAW_DATA_FORMAT_DEC
-				size += 3 * 2 +
-				    (7 * frameMS.header.sense_node + 1)
-				    * frameMS.header.force_node;
-#else
-				size += (res * sizeof(short) + 2) * 2;
-#endif
-				/* set res to OK because if getMSFrame is
-				 * successful res = number of words read
-				 */
-				res = OK;
-				print_frame_short(
-					"MS frame =",
-					array1dTo2d_short(
-						frameMS.node_data,
-						frameMS.node_data_size,
-						frameMS.header.sense_node),
-					frameMS.header.force_node,
-					frameMS.header.sense_node);
-			}
-			break;
-		/*read self raw*/
-		case 0x15:
-			pr_info("Get 1 SS Frame\n");
-			if (numberParameters >= 2 &&
-				typeOfCommand[1] == LOCKED_LP_DETECT)
-				setScanMode(SCAN_MODE_LOCKED, LOCKED_LP_DETECT);
-			else
-				setScanMode(SCAN_MODE_LOCKED, LOCKED_ACTIVE);
-			msleep(WAIT_FOR_FRESH_FRAMES);
-			setScanMode(SCAN_MODE_ACTIVE, 0x00);
-			msleep(WAIT_AFTER_SENSEOFF);
-			flushFIFO();
-			/* delete the events related to some touch
-			 * (allow to call this function while touching
-			 * the screen without having a flooding of the
-			 * FIFO)
-			 */
-			if (numberParameters >= 2 &&
-				typeOfCommand[1] == LOCKED_LP_DETECT)
-				res = getSSFrame3(SS_DETECT_RAW, &frameSS);
-			else
-				res = getSSFrame3(SS_RAW, &frameSS);
-
-			if (res < OK) {
-				pr_err("Error while taking the SS frame... ERROR %08X\n",
-					res);
-			} else {
-				pr_info("The frame size is %d words\n", res);
-#ifdef RAW_DATA_FORMAT_DEC
-				size += 3 * 2 + 5 +
-					(frameSS.header.sense_node +
-					 frameSS.header.force_node) * 7;
-#else
-				size += (res * sizeof(short) + 2) * 2;
-#endif
-				/* set res to OK because if getMSFrame is
-				 * successful res = number of words read
-				 */
-				res = OK;
-				print_frame_short(
-					"SS force frame =",
-					array1dTo2d_short(
-						frameSS.force_data,
-						frameSS.header.force_node,
-						1),
-					frameSS.header.force_node, 1);
-				print_frame_short(
-					"SS sense frame =",
-					array1dTo2d_short(
-						frameSS.sense_data,
-						frameSS.header.sense_node,
-						frameSS.header.sense_node),
-					1, frameSS.header.sense_node);
-			}
-			break;
-
-		case 0x14:	/* read mutual comp data */
-			pr_info("Get MS Compensation Data\n");
-			res = readMutualSenseCompensationData(LOAD_CX_MS_TOUCH,
-							      &compData);
-
-			if (res < 0)
-				pr_err("Error reading MS compensation data ERROR %08X\n",
-					res);
-			else {
-				pr_info("MS Compensation Data Reading Finished!\n");
-				size += ((compData.node_data_size + 3) *
-					 sizeof(u8)) * 2;
-				print_frame_i8("MS Data (Cx2) =",
-					       array1dTo2d_i8(
-						       compData.node_data,
-						       compData.
-						       node_data_size,
-						       compData.header.
-						       sense_node),
-					       compData.header.force_node,
-					       compData.header.sense_node);
-			}
-			break;
-
-		case 0x16:	/* read self comp data */
-			pr_info("Get SS Compensation Data...\n");
-			res = readSelfSenseCompensationData(LOAD_CX_SS_TOUCH,
-							    &comData);
-			if (res < 0)
-				pr_err("Error reading SS compensation data ERROR %08X\n",
-					res);
-			else {
-				pr_info("SS Compensation Data Reading Finished!\n");
-				size += ((comData.header.force_node +
-					  comData.header.sense_node) * 2 + 8) *
-					sizeof(u8) * 2;
-				print_frame_u8("SS Data Ix2_fm = ",
-					       array1dTo2d_u8(comData.ix2_fm,
-							      comData.header.
-							      force_node, 1),
-					       comData.header.force_node, 1);
-				print_frame_i8("SS Data Cx2_fm = ",
-					       array1dTo2d_i8(comData.cx2_fm,
-							      comData.header.
-							      force_node, 1),
-					       comData.header.force_node, 1);
-				print_frame_u8("SS Data Ix2_sn = ",
-					       array1dTo2d_u8(comData.ix2_sn,
-							      comData.header.
-							      sense_node,
-							      comData.header.
-							      sense_node), 1,
-					       comData.header.sense_node);
-				print_frame_i8("SS Data Cx2_sn = ",
-					       array1dTo2d_i8(comData.cx2_sn,
-							      comData.header.
-							      sense_node,
-							      comData.header.
-							      sense_node), 1,
-					       comData.header.sense_node);
-			}
-			break;
-		case 0x17:	/* Read mutual strength */
-			pr_info("Get 1 MS Strength\n");
-			setScanMode(SCAN_MODE_ACTIVE, 0xFF);
-			msleep(WAIT_FOR_FRESH_FRAMES);
-			setScanMode(SCAN_MODE_ACTIVE, 0x00);
-			msleep(WAIT_AFTER_SENSEOFF);
-			/* Flush outstanding touch events */
-			flushFIFO();
-			nodes = getMSFrame3(MS_STRENGTH, &frameMS);
-			if (nodes < 0) {
-				res = nodes;
-				pr_err("Error while taking the MS strength... ERROR %08X\n",
-					res);
-			} else {
-				pr_info("The frame size is %d words\n", nodes);
-#ifdef RAW_DATA_FORMAT_DEC
-				size += 3 * 2 +
-				    (7 * frameMS.header.sense_node + 1)
-				    * frameMS.header.force_node;
-#else
-				size += (nodes * sizeof(short) + 2) * 2;
-#endif
-				print_frame_short("MS strength =",
-				    array1dTo2d_short(frameMS.node_data,
-						frameMS.node_data_size,
-						frameMS.header.sense_node),
-				    frameMS.header.force_node,
-				    frameMS.header.sense_node);
-				res = OK;
-			}
-			break;
-		case 0x03:	/* MS Raw DATA TEST */
-			res = fts_system_reset();
-			if (res >= OK)
-				res = production_test_ms_raw(limits_file, 1,
-							     &tests);
-			break;
-
-		case 0x04:	/* MS CX DATA TEST */
-			res = fts_system_reset();
-			if (res >= OK)
-				res = production_test_ms_cx(limits_file, 1,
-							    &tests);
-			break;
-
-		case 0x05:	/* SS RAW DATA TEST */
-			res = fts_system_reset();
-			if (res >= OK)
-				res = production_test_ss_raw(limits_file, 1,
-							     &tests);
-			break;
-
-		case 0x06:	/* SS IX CX DATA TEST */
-			res = fts_system_reset();
-			if (res >= OK)
-				res = production_test_ss_ix_cx(limits_file, 1,
-							       &tests);
-			break;
-
-
-		case 0xF0:
-		case 0xF1:	/* TOUCH ENABLE/DISABLE */
-			doClean = (int)(typeOfCommand[0] & 0x01);
-			res = cleanUp(doClean);
-			break;
-
-		default:
-			pr_err("COMMAND NOT VALID!! Insert a proper value ...\n");
-			res = ERROR_OP_NOT_ALLOW;
-			break;
-		}
-
-		doClean = fts_mode_handler(info, 1);
-		if (typeOfCommand[0] != 0xF0)
-			doClean |= fts_enableInterrupt(true);
-		if (doClean < 0)
-			pr_err("%s: ERROR %08X\n", __func__,
-				 (doClean | ERROR_ENABLE_INTER));
-	} else {
-		pr_err("NO COMMAND SPECIFIED!!! do: 'echo [cmd_code] [args] > stm_fts_cmd' before looking for result!\n");
-		res = ERROR_OP_NOT_ALLOW;
-	}
-
-END:
-	/* here start the reporting phase, assembling the data
-	  * to send in the file node */
-	size = PAGE_SIZE;
-	index = 0;
-	index += scnprintf(all_strbuff + index, size - index, "{ %08X", res);
-
-	if (res >= OK || report) {
-		/*all the other cases are already fine printing only the res.*/
-		switch (typeOfCommand[0]) {
-		case 0x01:
-		case 0x13:
-		case 0x17:
-
-			if (frameMS.node_data == NULL)
-				break;
-
-#ifdef RAW_DATA_FORMAT_DEC
-			index += scnprintf(all_strbuff + index, size - index,
-					   "%3d",
-					   (u8)frameMS.header.force_node);
-			index += scnprintf(all_strbuff + index, size - index,
-					   "%3d",
-					   (u8)frameMS.header.sense_node);
-#else
-			index += scnprintf(all_strbuff + index,
-					   size - index, "%02X",
-					   (u8)frameMS.header.force_node);
-
-			index += scnprintf(all_strbuff + index,
-					   size - index, "%02X",
-					   (u8)frameMS.header.sense_node);
-#endif
-
-			for (j = 0; j < frameMS.node_data_size; j++) {
-#ifdef RAW_DATA_FORMAT_DEC
-				if (j % frameMS.header.sense_node == 0)
-					index += scnprintf(all_strbuff + index,
-							   size - index, "\n");
-				index += scnprintf(all_strbuff + index,
-						   size - index, "%d ",
-						   frameMS.node_data[j]);
-#else
-				index += scnprintf(all_strbuff + index,
-					   size - index,
-					   "%02X%02X",
-					   (frameMS.node_data[j] & 0xFF00) >> 8,
-					   frameMS.node_data[j] & 0xFF);
-#endif
-			}
-
-			kfree(frameMS.node_data);
-			break;
-
-		case 0x15:
-#ifdef RAW_DATA_FORMAT_DEC
-			index += scnprintf(all_strbuff + index, size - index,
-					   "%3d",
-					   (u8)frameSS.header.force_node);
-			index += scnprintf(all_strbuff + index, size - index,
-					   "%3d",
-					   (u8)frameSS.header.sense_node);
-			index += scnprintf(all_strbuff + index, size - index,
-					   "\n");
-#else
-			index += scnprintf(all_strbuff + index,
-					   size - index, "%02X",
-					   (u8)frameSS.header.force_node);
-
-			index += scnprintf(all_strbuff + index,
-					   size - index, "%02X",
-					   (u8)frameSS.header.sense_node);
-#endif
-
-			/* Copying self raw data Force */
-			for (j = 0; j < frameSS.header.force_node; j++) {
-#ifdef RAW_DATA_FORMAT_DEC
-				index += scnprintf(all_strbuff + index,
-						   size - index,
-						   "%d ",
-						   frameSS.force_data[j]);
-#else
-				index += scnprintf(all_strbuff + index,
-					  size - index,
-					  "%02X%02X",
-					  (frameSS.force_data[j] & 0xFF00) >> 8,
-					  frameSS.force_data[j] & 0xFF);
-#endif
-			}
-
-
-
-#ifdef RAW_DATA_FORMAT_DEC
-			index += scnprintf(all_strbuff + index, size - index,
-					   "\n");
-#endif
-
-			/* Copying self raw data Sense */
-			for (j = 0; j < frameSS.header.sense_node; j++) {
-#ifdef RAW_DATA_FORMAT_DEC
-				index += scnprintf(all_strbuff + index,
-						   size - index, "%d ",
-						   frameSS.sense_data[j]);
-#else
-				index += scnprintf(all_strbuff + index,
-					  size - index,
-					  "%02X%02X",
-					  (frameSS.sense_data[j] & 0xFF00) >> 8,
-					  frameSS.sense_data[j] & 0xFF);
-#endif
-			}
-
-			kfree(frameSS.force_data);
-			kfree(frameSS.sense_data);
-			break;
-
-		case 0x14:
-			index += scnprintf(all_strbuff + index,
-					   size - index, "%02X",
-					   (u8)compData.header.force_node);
-
-			index += scnprintf(all_strbuff + index,
-					   size - index, "%02X",
-					   (u8)compData.header.sense_node);
-
-			/* Cpying CX1 value */
-			index += scnprintf(all_strbuff + index,
-					   size - index, "%02X",
-					   (compData.cx1) & 0xFF);
-
-			/* Copying CX2 values */
-			for (j = 0; j < compData.node_data_size; j++) {
-				index += scnprintf(all_strbuff + index,
-						size - index,
-						"%02X",
-						(compData.node_data[j]) & 0xFF);
-			}
-
-			kfree(compData.node_data);
-			break;
-
-		case 0x16:
-			index += scnprintf(all_strbuff + index,
-					   size - index, "%02X",
-					   comData.header.force_node);
-
-			index += scnprintf(all_strbuff + index,
-					   size - index, "%02X",
-					   comData.header.sense_node);
-
-			index += scnprintf(all_strbuff + index,
-					   size - index, "%02X",
-					   (comData.f_ix1) & 0xFF);
-
-			index += scnprintf(all_strbuff + index,
-					   size - index, "%02X",
-					   (comData.s_ix1) & 0xFF);
-
-			index += scnprintf(all_strbuff + index,
-					   size - index, "%02X",
-					   (comData.f_cx1) & 0xFF);
-
-			index += scnprintf(all_strbuff + index,
-					   size - index, "%02X",
-					   (comData.s_cx1) & 0xFF);
-
-			index += scnprintf(all_strbuff + index,
-					   size - index, "%02X",
-					   (comData.f_ix0) & 0xFF);
-
-			index += scnprintf(all_strbuff + index,
-					   size - index, "%02X",
-					   (comData.s_ix0) & 0xFF);
-
-			/* Copying IX2 Force */
-			for (j = 0; j < comData.header.force_node; j++) {
-				index += scnprintf(all_strbuff + index,
-						   size - index,
-						   "%02X",
-						   comData.ix2_fm[j] & 0xFF);
-			}
-
-			/* Copying IX2 Sense */
-			for (j = 0; j < comData.header.sense_node; j++) {
-				index += scnprintf(all_strbuff + index,
-						   size - index,
-						   "%02X",
-						   comData.ix2_sn[j] & 0xFF);
-			}
-
-			/* Copying CX2 Force */
-			for (j = 0; j < comData.header.force_node; j++) {
-				index += scnprintf(all_strbuff + index,
-						   size - index,
-						   "%02X",
-						   comData.cx2_fm[j] & 0xFF);
-			}
-
-			/* Copying CX2 Sense */
-			for (j = 0; j < comData.header.sense_node; j++) {
-				index += scnprintf(all_strbuff + index,
-						   size - index,
-						   "%02X",
-						   comData.cx2_sn[j] & 0xFF);
-			}
-
-			kfree(comData.ix2_fm);
-			kfree(comData.ix2_sn);
-			kfree(comData.cx2_fm);
-			kfree(comData.cx2_sn);
-			break;
-
-		default:
-			break;
-		}
-	}
-
-	index += scnprintf(all_strbuff + index, size - index, " }\n");
-	numberParameters = 0;
-	/* need to reset the number of parameters in order to wait the
-	  * next command, comment if you want to repeat the last command sent
-	  * just doing a cat */
-	/* pr_err("numberParameters = %d\n", numberParameters); */
-
-	fts_set_bus_ref(info, FTS_BUS_REF_SYSFS, false);
-	mutex_unlock(&info->diag_cmd_lock);
-
-	return index;
-}
-
-static ssize_t autotune_store(struct device *dev,
-				  struct device_attribute *attr,
-				  const char *buf, size_t count)
-{
-	struct fts_ts_info *info = dev_get_drvdata(dev);
-	int ret = 0;
-	bool val = false;
-
-	if ((kstrtobool(buf, &val) < 0) || !val) {
-		ret = -EINVAL;
-		goto err_args;
-	}
-
-	fts_set_bus_ref(info, FTS_BUS_REF_SYSFS, true);
-
-	ret = production_test_main(info->board->limits_name, 1,
-				   SPECIAL_FULL_PANEL_INIT, &tests,
-				   MP_FLAG_BOOT);
-
-	cleanUp(true);
-
-	info->autotune_stat = ret;
-
-	fts_set_bus_ref(info, FTS_BUS_REF_SYSFS, false);
-
-err_args:
-
-	return ret < 0 ? ret : count;
-}
-
-static ssize_t autotune_show(struct device *dev,
-				 struct device_attribute *attr,
-				 char *buf)
-{
-	struct fts_ts_info *info = dev_get_drvdata(dev);
-
-	return scnprintf(buf, PAGE_SIZE, "{ %08X }\n", info->autotune_stat);
-}
-
 static ssize_t infoblock_getdata_show(struct device *dev,
 					  struct device_attribute *attr,
 					  char *buf)
@@ -2678,7 +1813,6 @@ static DEVICE_ATTR_RO(appid);
 static DEVICE_ATTR_RO(mode_active);
 static DEVICE_ATTR_RO(fw_file_test);
 static DEVICE_ATTR_RO(status);
-static DEVICE_ATTR_RW(stm_fts_cmd);
 #ifdef CONFIG_TOUCHSCREEN_HEATMAP
 static DEVICE_ATTR_RW(heatmap_mode);
 #endif
@@ -2713,8 +1847,6 @@ static DEVICE_ATTR_RW(stylus_mode);
 static DEVICE_ATTR_RW(gesture_mask);
 static DEVICE_ATTR_RO(gesture_coordinates);
 #endif
-static DEVICE_ATTR_RW(autotune);
-
 static DEVICE_ATTR_RW(touchsim);
 
 static DEVICE_ATTR_RW(default_mf);
@@ -2727,7 +1859,6 @@ static struct attribute *fts_attr_group[] = {
 	&dev_attr_mode_active.attr,
 	&dev_attr_fw_file_test.attr,
 	&dev_attr_status.attr,
-	&dev_attr_stm_fts_cmd.attr,
 #ifdef CONFIG_TOUCHSCREEN_HEATMAP
 	&dev_attr_heatmap_mode.attr,
 #endif
@@ -2757,7 +1888,6 @@ static struct attribute *fts_attr_group[] = {
 	&dev_attr_gesture_mask.attr,
 	&dev_attr_gesture_coordinates.attr,
 #endif
-	&dev_attr_autotune.attr,
 	&dev_attr_touchsim.attr,
 	&dev_attr_default_mf.attr,
 	NULL,
@@ -4333,39 +3463,36 @@ static void fts_fw_update_auto(struct work_struct *work)
 	fts_set_bus_ref(info, FTS_BUS_REF_FW_UPDATE, false);
 }
 
-/* TODO: define if need to do the full mp at the boot */
 /**
-  *	Execute the initialization of the IC (supporting a retry mechanism),
-  * checking also the resulting data
-  *	@see  production_test_main()
+  * Initialize the IC (panel calibration), retrying with a power cycle on
+  * failure, and record the result in the MP flag.
   */
 static int fts_chip_initialization(struct fts_ts_info *info, int init_type)
 {
-	int ret2 = 0;
+	int ret = 0;
 	int retry;
-	int initretrycnt = 0;
-	const char *limits_file = info->board->limits_name;
 
-	/* initialization error, retry initialization */
 	for (retry = 0; retry < RETRY_INIT_BOOT; retry++) {
-#ifndef COMPUTE_INIT_METHOD
-		ret2 = production_test_initialization(init_type);
-#else
-		ret2 = production_test_main(limits_file, 1, init_type, &tests,
-			MP_FLAG_BOOT);
-#endif
-		if (ret2 == OK)
+		ret = fts_ic_initialization(init_type);
+		if (ret == OK)
+			ret = fts_system_reset();
+		if (ret == OK) {
+			if (flushFIFO() < OK)
+				pr_err("%s: Error while flushing the FIFO\n",
+				       __func__);
+			ret = saveMpFlag(MP_FLAG_BOOT);
+		}
+		if (ret == OK)
 			break;
-		initretrycnt++;
 		pr_err("initialization cycle count = %04d - ERROR %08X\n",
-			initretrycnt, ret2);
+			retry + 1, ret);
 		fts_chip_powercycle(info);
 	}
 
-	if (ret2 < OK)	/* initialization error */
+	if (ret < OK)	/* initialization error */
 		pr_err("fts initialization failed %d times\n", RETRY_INIT_BOOT);
 
-	return ret2;
+	return ret;
 }
 
 

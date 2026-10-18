@@ -75,7 +75,6 @@
 #define COMPUTE_INIT_METHOD  /* Allow to compute init data on phone during
 			      * production
 			      */
-#define SKIP_PRODUCTION_TEST /* Allow to skip Production test */
 
 #ifndef COMPUTE_INIT_METHOD
 #define PRE_SAVED_METHOD /* Pre-Saved Method used
@@ -88,46 +87,6 @@
 #define FW_SIZE_NAME	myArray_size	/* FW data array size */
 #define FW_ARRAY_NAME	myArray	/* FW data array name */
 /*#define FW_UPDATE_ON_PROBE*/		/* No delay updating FW */
-#endif
-
-#ifndef FW_UPDATE_ON_PROBE
-/* Include the Production Limit File as header file, can be commented to use a
-  * .csv file instead */
-/* #define LIMITS_H_FILE */
-#ifdef LIMITS_H_FILE
-	#define LIMITS_SIZE_NAME	myArray2_size	/* /< name of the
-							 * variable
-							  * in the limits header
-							  *file which
-							  * specified the
-							  *dimension of
-							  * the limits data
-							  *array */
-	#define LIMITS_ARRAY_NAME	myArray2	/* /< name of the
-							 * variable in
-							  * the limits header
-							  *file which
-							  * specified the limits
-							  *data array */
-#endif
-#else
-/* if execute fw update in the probe the limit file must be a .h */
-#define LIMITS_H_FILE	/* /< include the Production Limit File as header file,
-			 * DO NOT COMMENT! */
-#define LIMITS_SIZE_NAME		myArray2_size	/* /< name of the
-							 * variable
-							  * in the limits header
-							  *file
-							  * which specified the
-							  *dimension
-							  * of the limits data
-							  *array */
-#define LIMITS_ARRAY_NAME		myArray2	/* /< name of the
-							 * variable in the
-							  * limits header file
-							  *which specified
-							  * the limits data
-							  *array */
 #endif
 
 /* #define USE_ONE_FILE_NODE */	/* /< allow to enable/disable all the features
@@ -249,10 +208,6 @@ struct heatmap_report {
 
 /** @}*/
 
-#define CMD_STR_LEN	32	/* /< max number of parameters that can accept
-				 * the
-				  * MP file node (stm_fts_cmd) */
-
 #define TSP_BUF_SIZE	PAGE_SIZE	/* /< max number of bytes printable on
 					  * the shell in the normal file nodes
 					  **/
@@ -281,7 +236,6 @@ struct fts_hw_platform_data {
 	const char *vdd_reg_name;	/* /< name of the VDD regulator */
 	const char *avdd_reg_name;	/* /< name of the AVDD regulator */
 	const char *fw_name;
-	const char *limits_name;
 	bool sensor_inverted;
 	int x_axis_max;
 	int y_axis_max;
@@ -437,7 +391,6 @@ struct fts_ts_info {
 	int resume_bit;	/* Indicate if screen off/on */
 	int fwupdate_stat;	/* Result of a fw update */
 	int reflash_fw;	/* Attempt to reflash fw */
-	int autotune_stat;	/* Attempt to autotune */
 
 	struct fts_disp_extinfo extinfo;	/* Display extended info */
 

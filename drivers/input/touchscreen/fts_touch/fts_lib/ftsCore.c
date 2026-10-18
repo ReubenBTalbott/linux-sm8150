@@ -27,7 +27,6 @@
 #include "ftsCore.h"
 #include "ftsError.h"
 #include "ftsIO.h"
-#include "ftsTest.h"
 #include "ftsTime.h"
 #include "ftsTool.h"
 #include "ftsFrame.h"
@@ -61,7 +60,6 @@ int initCore(struct fts_ts_info *info)
 	pr_info("%s: Initialization of the Core...\n", __func__);
 	ret |= openChannel(info->client);
 	ret |= resetErrorList();
-	ret |= initTestToDo();
 	setResetGpio(info->board->reset_gpio);
 	if (ret < OK)
 		pr_err("%s: Initialization Core ERROR %08X!\n",
@@ -1231,4 +1229,51 @@ int saveMpFlag(u8 mpflag)
 
 	pr_info("%s: Saving MP Flag OK!\n", __func__);
 	return OK;
+}
+
+/**
+  * Perform the Initialization of the IC
+  * @param type type of initialization to do
+  * (see @link sys_special_opt Initialization Options (Full or Panel) @endlink)
+  * @return OK if success or an error code which specify the type of error
+  */
+int fts_ic_initialization(u8 type)
+{
+	int res;
+
+	pr_info("IC initialization is starting...\n");
+	if (type != SPECIAL_PANEL_INIT && type != SPECIAL_FULL_PANEL_INIT) {
+		pr_err("fts_ic_initialization: Type incompatible! Type = %02X ERROR %08X\n",
+			type, ERROR_OP_NOT_ALLOW |
+			ERROR_PROD_TEST_INITIALIZATION);
+		return ERROR_OP_NOT_ALLOW | ERROR_PROD_TEST_INITIALIZATION;
+	}
+
+	res = fts_system_reset();
+	if (res < 0) {
+		pr_err("fts_ic_initialization: ERROR %08X\n",
+			ERROR_PROD_TEST_INITIALIZATION);
+		return res | ERROR_PROD_TEST_INITIALIZATION;
+	}
+
+	pr_info("INITIALIZATION command sent... %02X\n", type);
+	res = writeSysCmd(SYS_CMD_SPECIAL, &type, 1);
+	if (res < OK) {
+		pr_err("fts_ic_initialization: ERROR %08X\n",
+			(res | ERROR_PROD_TEST_INITIALIZATION));
+		return res | ERROR_PROD_TEST_INITIALIZATION;
+	}
+
+
+	pr_info("Refresh Sys Info...\n");
+	res |= readSysInfo(1);	/* need to update the chipInfo in order
+				  * to refresh several versions */
+
+	if (res < 0) {
+		pr_err("fts_ic_initialization: read sys info ERROR %08X\n",
+			ERROR_PROD_TEST_INITIALIZATION);
+		res = (res | ERROR_PROD_TEST_INITIALIZATION);
+	}
+
+	return res;
 }
