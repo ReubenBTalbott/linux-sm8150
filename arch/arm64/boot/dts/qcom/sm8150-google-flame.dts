@@ -38,7 +38,7 @@
 
 / {
 	model = "Google Pixel 4";
-	compatible = "google,floral-sm8150", "qcom,sm8150";
+	compatible = "google,flame", "qcom,sm8150";
 	qcom,msm-id = <QCOM_ID_SM8150 0x00020000>; /* SM8150 v2.0 */
 	qcom,board-id = <0x00061e05 0x00000000>;
 	
