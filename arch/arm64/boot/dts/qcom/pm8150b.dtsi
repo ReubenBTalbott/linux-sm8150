@@ -162,7 +162,7 @@
 				reg = <ADC5_USB_IN_V_16>;
 				qcom,pre-scaling = <1 16>;
 				label = "usbin_v";
-			};\
+			};
 
 			channel@9 {
 				reg = <ADC5_CHG_TEMP>;
