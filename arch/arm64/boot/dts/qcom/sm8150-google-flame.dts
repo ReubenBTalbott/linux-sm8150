@@ -1354,9 +1354,10 @@
 	
 	/* st,st21nfc @ 8 */
 
+	/* Camera sub-PMIC; nothing uses its rails until the cameras are supported */
 	max77826: pmic@60 {
 		compatible = "maxim,max77826";
-		status = "okay";
+		status = "disabled";
 		reg = <0x60>;
 		
 		pinctrl-names = "cam_pmic_en";
