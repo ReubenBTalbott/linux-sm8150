@@ -5565,10 +5565,6 @@ static int fts_probe(struct spi_device *client)
 		goto ProbeErrorExit_7;
 	}
 
-	error = fts_proc_init();
-	if (error < OK)
-		pr_err("Error: can not create /proc file!\n");
-
 	if (info->fwu_workqueue)
 		queue_delayed_work(info->fwu_workqueue, &info->fwu_work,
 				   msecs_to_jiffies(EXP_FN_WORK_DELAY_MS));
@@ -5653,8 +5649,6 @@ static void fts_remove(struct spi_device *client)
 #ifdef CONFIG_TOUCHSCREEN_TBN
 	tbn_cleanup(info->tbn);
 #endif
-
-	fts_proc_remove();
 
 	/* sysfs stuff */
 	sysfs_remove_group(&client->dev.kobj, &info->attrs);
