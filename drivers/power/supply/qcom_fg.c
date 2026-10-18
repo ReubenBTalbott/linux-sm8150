@@ -1131,8 +1131,8 @@ static int qcom_fg_notifier_call(struct notifier_block *nb, unsigned long val,
 						&propval);
 		if (ret)
 			chip->status = POWER_SUPPLY_STATUS_UNKNOWN;
-
-		chip->status = propval.intval;
+		else
+			chip->status = propval.intval;
 
 		power_supply_changed(chip->batt_psy);
 
