@@ -121,7 +121,6 @@ enum smb_generation {
 #define SMB2_VCONN_EN_SRC_BIT				BIT(4)
 #define VCONN_EN_VALUE_BIT				BIT(3)
 #define TYPEC_POWER_ROLE_CMD_MASK			GENMASK(2, 0)
-#define SMB5_EN_SNK_ONLY_BIT				BIT(1)
 
 #define USBIN_CURRENT_LIMIT_CFG				0x370
 
@@ -147,30 +146,6 @@ enum smb_generation {
 #define POWER_PATH_STATUS(smb)				(SMB_REG_OFFSET(smb) + 0x0B)
 #define P_PATH_USE_USBIN_BIT				BIT(4)
 #define P_PATH_VALID_INPUT_POWER_SOURCE_STS_BIT		BIT(0)
-
-/* 0x5xx region is PM8150b only Type-C registers */
-
-/* Bits 2:0 match PMI8998 TYPE_C_INTRPT_ENB_SOFTWARE_CTRL */
-#define SMB5_TYPE_C_MODE_CFG				0x544
-#define SMB5_EN_TRY_SNK_BIT				BIT(4)
-#define SMB5_EN_SNK_ONLY_BIT				BIT(1)
-
-#define SMB5_TYPEC_TYPE_C_VCONN_CONTROL			0x546
-#define SMB5_VCONN_EN_ORIENTATION_BIT			BIT(2)
-#define SMB5_VCONN_EN_VALUE_BIT				BIT(1)
-#define SMB5_VCONN_EN_SRC_BIT				BIT(0)
-
-
-#define SMB5_TYPE_C_DEBUG_ACCESS_SINK			0x54a
-#define SMB5_TYPEC_DEBUG_ACCESS_SINK_MASK		GENMASK(4, 0)
-
-#define SMB5_DEBUG_ACCESS_SRC_CFG			0x54C
-#define SMB5_EN_UNORIENTED_DEBUG_ACCESS_SRC_BIT	BIT(0)
-
-#define SMB5_TYPE_C_EXIT_STATE_CFG			0x550
-#define SMB5_BYPASS_VSAFE0V_DURING_ROLE_SWAP_BIT	BIT(3)
-#define SMB5_SEL_SRC_UPPER_REF_BIT			BIT(2)
-#define SMB5_EXIT_SNK_BASED_ON_CC_BIT			BIT(0)
 
 /* Common */
 
@@ -722,32 +697,12 @@ static const struct power_supply_desc smb_psy_desc = {
 static const struct smb_init_register smb5_init_seq[] = {
 	{ .addr = USBIN_CMD_IL, .mask = USBIN_SUSPEND_BIT, .val = 0 },
 	/*
-	 * By default configure us as an upstream facing port
-	 * FIXME: This will be handled by the type-c driver
-	 */
-	{ .addr = SMB5_TYPE_C_MODE_CFG,
-	  .mask = SMB5_EN_TRY_SNK_BIT | SMB5_EN_SNK_ONLY_BIT,
-	  .val = SMB5_EN_TRY_SNK_BIT },
-	{ .addr = SMB5_TYPEC_TYPE_C_VCONN_CONTROL,
-	  .mask = SMB5_VCONN_EN_ORIENTATION_BIT | SMB5_VCONN_EN_SRC_BIT |
-		  SMB5_VCONN_EN_VALUE_BIT,
-	  .val = SMB2_VCONN_EN_SRC_BIT },
-	{ .addr = SMB5_DEBUG_ACCESS_SRC_CFG,
-	  .mask = SMB5_EN_UNORIENTED_DEBUG_ACCESS_SRC_BIT,
-	  .val = SMB5_EN_UNORIENTED_DEBUG_ACCESS_SRC_BIT },
-	{ .addr = SMB5_TYPE_C_EXIT_STATE_CFG,
-	  .mask = SMB5_SEL_SRC_UPPER_REF_BIT,
-	  .val = SMB5_SEL_SRC_UPPER_REF_BIT },
-	/*
 	 * Disable Type-C factory mode and stay in Attached.SRC state when VCONN
 	 * over-current happens
 	 */
 	{ .addr = TYPE_C_CFG,
 	  .mask = APSD_START_ON_CC_BIT,
 	  .val = 0 },
-	{ .addr = SMB5_TYPE_C_DEBUG_ACCESS_SINK,
-	  .mask = SMB5_TYPEC_DEBUG_ACCESS_SINK_MASK,
-	  .val = 0x17 },
 	/* Configure VBUS for software control */
 	{ .addr = OTG_CFG, .mask = OTG_EN_SRC_CFG_BIT, .val = 0 },
 	/*
