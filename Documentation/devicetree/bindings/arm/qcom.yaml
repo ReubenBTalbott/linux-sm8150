@@ -1058,6 +1058,7 @@ properties:
 
       - items:
           - enum:
+              - google,flame
               - microsoft,surface-duo
               - qcom,sm8150-hdk
               - qcom,sm8150-mtp
