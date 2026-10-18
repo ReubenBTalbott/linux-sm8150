@@ -141,9 +141,7 @@ static int nt37280_lh568wf3_ed01_prepare(struct drm_panel *panel)
 	ret = nt37280_lh568wf3_ed01_on(ctx);
 	if (ret < 0) {
 		dev_err(dev, "Failed to initialize panel: %d\n", ret);
-		gpiod_set_value_cansleep(ctx->reset_gpio, 1);
-		regulator_bulk_disable(ARRAY_SIZE(nt37280_lh568wf3_ed01_supplies), ctx->supplies);
-		return ret;
+		goto err_power_off;
 	}
 
 	drm_dsc_pps_payload_pack(&pps, &ctx->dsc);
@@ -151,18 +149,23 @@ static int nt37280_lh568wf3_ed01_prepare(struct drm_panel *panel)
 	ret = mipi_dsi_picture_parameter_set(ctx->dsi, &pps);
 	if (ret < 0) {
 		dev_err(panel->dev, "failed to transmit PPS: %d\n", ret);
-		return ret;
+		goto err_power_off;
 	}
 
 	ret = mipi_dsi_compression_mode(ctx->dsi, true);
 	if (ret < 0) {
 		dev_err(dev, "failed to enable compression mode: %d\n", ret);
-		return ret;
+		goto err_power_off;
 	}
 
 	msleep(28); /* TODO: Is this panel-dependent? */
 
 	return 0;
+
+err_power_off:
+	gpiod_set_value_cansleep(ctx->reset_gpio, 1);
+	regulator_bulk_disable(ARRAY_SIZE(nt37280_lh568wf3_ed01_supplies), ctx->supplies);
+	return ret;
 }
 
 static int nt37280_lh568wf3_ed01_unprepare(struct drm_panel *panel)
@@ -247,12 +250,10 @@ static int nt37280_lh568wf3_ed01_bl_update_status(struct backlight_device *bl)
 	dsi->mode_flags &= ~MIPI_DSI_MODE_LPM;
 
 	ret = mipi_dsi_dcs_set_display_brightness_large(dsi, brightness);
-	if (ret < 0)
-		return ret;
 
 	dsi->mode_flags |= MIPI_DSI_MODE_LPM;
 
-	return 0;
+	return ret < 0 ? ret : 0;
 }
 
 static const struct backlight_ops nt37280_lh568wf3_ed01_bl_ops = {
