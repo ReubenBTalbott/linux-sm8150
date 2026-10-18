@@ -1297,6 +1297,154 @@ static struct kunit_suite clk_orphan_transparent_single_parent_test_suite = {
 	.test_cases = clk_orphan_transparent_single_parent_mux_test_cases,
 };
 
+struct clk_gate_counter_ctx {
+	struct clk_hw hw;
+	unsigned int prepare_calls;
+	unsigned int enable_calls;
+};
+
+static int clk_gate_counter_prepare(struct clk_hw *hw)
+{
+	struct clk_gate_counter_ctx *ctx =
+		container_of(hw, struct clk_gate_counter_ctx, hw);
+
+	ctx->prepare_calls++;
+	return 0;
+}
+
+static void clk_gate_counter_unprepare(struct clk_hw *hw)
+{
+}
+
+static int clk_gate_counter_enable(struct clk_hw *hw)
+{
+	struct clk_gate_counter_ctx *ctx =
+		container_of(hw, struct clk_gate_counter_ctx, hw);
+
+	ctx->enable_calls++;
+	return 0;
+}
+
+static void clk_gate_counter_disable(struct clk_hw *hw)
+{
+}
+
+static const struct clk_ops clk_gate_counter_ops = {
+	.prepare = clk_gate_counter_prepare,
+	.unprepare = clk_gate_counter_unprepare,
+	.enable = clk_gate_counter_enable,
+	.disable = clk_gate_counter_disable,
+};
+
+struct clk_orphan_parent_enable_ctx {
+	struct clk_gate_counter_ctx parent_ctx;
+	struct clk_hw hw;
+};
+
+static int clk_orphan_parent_enable_test_init(struct kunit *test)
+{
+	struct clk_orphan_parent_enable_ctx *ctx;
+
+	ctx = kunit_kzalloc(test, sizeof(*ctx), GFP_KERNEL);
+	if (!ctx)
+		return -ENOMEM;
+	test->priv = ctx;
+
+	ctx->hw.init = CLK_HW_INIT("test-orphan-parent-enable",
+				   "parent-counter-clk", &empty_clk_ops,
+				   CLK_OPS_PARENT_ENABLE);
+
+	return clk_hw_register_kunit(test, NULL, &ctx->hw);
+}
+
+static int clk_orphan_parent_enable_register_parent(struct kunit *test)
+{
+	struct clk_orphan_parent_enable_ctx *ctx = test->priv;
+
+	ctx->parent_ctx.hw.init = CLK_HW_INIT_NO_PARENT("parent-counter-clk",
+							&clk_gate_counter_ops,
+							0);
+
+	return clk_hw_register_kunit(test, NULL, &ctx->parent_ctx.hw);
+}
+
+/*
+ * Test that adopting an unprepared CLK_OPS_PARENT_ENABLE orphan does not
+ * prepare and enable its new parent.
+ */
+static void clk_test_orphan_parent_enable_unprepared(struct kunit *test)
+{
+	struct clk_orphan_parent_enable_ctx *ctx = test->priv;
+
+	KUNIT_ASSERT_EQ(test, clk_orphan_parent_enable_register_parent(test), 0);
+
+	KUNIT_EXPECT_PTR_EQ(test, clk_hw_get_parent(&ctx->hw),
+			    &ctx->parent_ctx.hw);
+	KUNIT_EXPECT_EQ(test, ctx->parent_ctx.prepare_calls, 0);
+	KUNIT_EXPECT_EQ(test, ctx->parent_ctx.enable_calls, 0);
+	KUNIT_EXPECT_FALSE(test, clk_hw_is_prepared(&ctx->parent_ctx.hw));
+}
+
+/*
+ * Test that adopting a prepared CLK_OPS_PARENT_ENABLE orphan still
+ * migrates its prepare count to the new parent.
+ */
+static void clk_test_orphan_parent_enable_prepared(struct kunit *test)
+{
+	struct clk_orphan_parent_enable_ctx *ctx = test->priv;
+	struct clk *clk = clk_hw_get_clk_kunit(test, &ctx->hw, NULL);
+
+	KUNIT_ASSERT_NOT_ERR_OR_NULL(test, clk);
+	KUNIT_ASSERT_EQ(test, clk_prepare(clk), 0);
+	KUNIT_ASSERT_EQ(test, clk_orphan_parent_enable_register_parent(test), 0);
+
+	KUNIT_EXPECT_PTR_EQ(test, clk_hw_get_parent(&ctx->hw),
+			    &ctx->parent_ctx.hw);
+	KUNIT_EXPECT_TRUE(test, clk_hw_is_prepared(&ctx->parent_ctx.hw));
+
+	clk_unprepare(clk);
+	KUNIT_EXPECT_FALSE(test, clk_hw_is_prepared(&ctx->parent_ctx.hw));
+}
+
+/*
+ * Test that adopting an enabled CLK_OPS_PARENT_ENABLE orphan migrates
+ * both its prepare and enable counts to the new parent. CLK_IS_CRITICAL
+ * orphans, which are enabled at registration, take the same path.
+ */
+static void clk_test_orphan_parent_enable_enabled(struct kunit *test)
+{
+	struct clk_orphan_parent_enable_ctx *ctx = test->priv;
+	struct clk *clk = clk_hw_get_clk_kunit(test, &ctx->hw, NULL);
+
+	KUNIT_ASSERT_NOT_ERR_OR_NULL(test, clk);
+	KUNIT_ASSERT_EQ(test, clk_prepare_enable(clk), 0);
+	KUNIT_ASSERT_EQ(test, clk_orphan_parent_enable_register_parent(test), 0);
+
+	KUNIT_EXPECT_TRUE(test, clk_hw_is_prepared(&ctx->parent_ctx.hw));
+	KUNIT_EXPECT_TRUE(test, clk_hw_is_enabled(&ctx->parent_ctx.hw));
+
+	clk_disable_unprepare(clk);
+	KUNIT_EXPECT_FALSE(test, clk_hw_is_enabled(&ctx->parent_ctx.hw));
+	KUNIT_EXPECT_FALSE(test, clk_hw_is_prepared(&ctx->parent_ctx.hw));
+}
+
+static struct kunit_case clk_orphan_parent_enable_test_cases[] = {
+	KUNIT_CASE(clk_test_orphan_parent_enable_unprepared),
+	KUNIT_CASE(clk_test_orphan_parent_enable_prepared),
+	KUNIT_CASE(clk_test_orphan_parent_enable_enabled),
+	{}
+};
+
+/*
+ * Test suite for a CLK_OPS_PARENT_ENABLE clock registered before its
+ * parent, checking what adopting the orphan does to the parent.
+ */
+static struct kunit_suite clk_orphan_parent_enable_test_suite = {
+	.name = "clk-orphan-parent-enable-test",
+	.init = clk_orphan_parent_enable_test_init,
+	.test_cases = clk_orphan_parent_enable_test_cases,
+};
+
 struct clk_single_parent_two_lvl_ctx {
 	struct clk_dummy_context parent_parent_ctx;
 	struct clk_dummy_context parent_ctx;
@@ -3550,6 +3698,7 @@ kunit_test_suites(
 	&clk_multiple_parents_mux_test_suite,
 	&clk_mux_no_reparent_test_suite,
 	&clk_mux_notifier_test_suite,
+	&clk_orphan_parent_enable_test_suite,
 	&clk_orphan_transparent_multiple_parent_mux_test_suite,
 	&clk_orphan_transparent_single_parent_test_suite,
 	&clk_orphan_two_level_root_last_test_suite,
