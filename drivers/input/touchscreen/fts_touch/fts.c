@@ -3321,6 +3321,7 @@ static int fts_interrupt_install(struct fts_ts_info *info)
 	if (error) {
 		pr_err("Request irq failed\n");
 		kfree(info->event_dispatch_table);
+		info->event_dispatch_table = NULL;
 	}
 
 	return error;
@@ -3332,11 +3333,17 @@ static int fts_interrupt_install(struct fts_ts_info *info)
   */
 static void fts_interrupt_uninstall(struct fts_ts_info *info)
 {
+	/* Nothing to do if the IRQ was never installed */
+	if (!info->event_dispatch_table)
+		return;
+
 	fts_enableInterrupt(false);
 
-	kfree(info->event_dispatch_table);
-
+	/* Wait for the handler to finish before freeing its dispatch table */
 	free_irq(info->client->irq, info);
+
+	kfree(info->event_dispatch_table);
+	info->event_dispatch_table = NULL;
 }
 
 /**@}*/
