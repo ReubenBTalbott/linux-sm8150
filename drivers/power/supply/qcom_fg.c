@@ -1155,6 +1155,11 @@ static int qcom_fg_notifier_call(struct notifier_block *nb, unsigned long val,
 	return NOTIFY_OK;
 }
 
+static void qcom_fg_put_chg_psy(void *data)
+{
+	power_supply_put(data);
+}
+
 static int qcom_fg_probe(struct platform_device *pdev)
 {
 	struct power_supply_config supply_config = {};
@@ -1171,6 +1176,28 @@ static int qcom_fg_probe(struct platform_device *pdev)
 
 	chip->dev = &pdev->dev;
 	chip->ops = of_device_get_match_data(&pdev->dev);
+
+	/*
+	 * Optional charger power supply for status checking. Look it up
+	 * before anything else, so that waiting for it doesn't redo the rest.
+	 */
+	chip->chg_psy = power_supply_get_by_reference(dev_fwnode(chip->dev),
+						    "power-supplies");
+	if (IS_ERR(chip->chg_psy)) {
+		ret = PTR_ERR(chip->chg_psy);
+		if (ret != -ENOENT)
+			return dev_err_probe(chip->dev, ret,
+					     "Failed to get charger supply\n");
+		chip->chg_psy = NULL;
+	} else if (!chip->chg_psy) {
+		/* Declared, but not registered yet */
+		return -EPROBE_DEFER;
+	} else {
+		ret = devm_add_action_or_reset(chip->dev, qcom_fg_put_chg_psy,
+					       chip->chg_psy);
+		if (ret)
+			return ret;
+	}
 
 	chip->regmap = dev_get_regmap(pdev->dev.parent, NULL);
 	if (!chip->regmap) {
@@ -1325,15 +1352,6 @@ static int qcom_fg_probe(struct platform_device *pdev)
 		return ret;
 	}
 
-	/* Optional: Get charger power supply for status checking */
-	chip->chg_psy = power_supply_get_by_reference(dev_fwnode(chip->dev),
-						    "power-supplies");
-	if (IS_ERR(chip->chg_psy)) {
-		ret = PTR_ERR(chip->chg_psy);
-		dev_warn(chip->dev, "Failed to get charger supply: %d\n", ret);
-		chip->chg_psy = NULL;
-	}
-
 	if (chip->chg_psy) {
 		INIT_DELAYED_WORK(&chip->status_changed_work,
 				  qcom_fg_status_changed_worker);
@@ -1343,7 +1361,6 @@ static int qcom_fg_probe(struct platform_device *pdev)
 		if (ret) {
 			dev_err(chip->dev, "Failed to register notifier: %d\n",
 				ret);
-			power_supply_put(chip->chg_psy);
 			return ret;
 		}
 	}
@@ -1358,7 +1375,6 @@ static void qcom_fg_remove(struct platform_device *pdev)
 	if (chip->chg_psy) {
 		power_supply_unreg_notifier(&chip->nb);
 		cancel_delayed_work_sync(&chip->status_changed_work);
-		power_supply_put(chip->chg_psy);
 	}
 
 	power_supply_put_battery_info(chip->batt_psy, chip->batt_info);
