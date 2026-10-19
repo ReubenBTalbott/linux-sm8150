@@ -108,6 +108,12 @@ int getFWdata(const char *pathToFile, u8 **data, int *size)
 		return ERROR_FILE_NOT_FOUND;
 	}
 
+	if (fw->size > INT_MAX) {
+		pr_err("getFWdata: firmware too large (%zu bytes)\n", fw->size);
+		release_firmware(fw);
+		return ERROR_FILE_PARSE;
+	}
+
 	*size = fw->size;
 	*data = kmalloc(*size, GFP_KERNEL);
 	if (!*data) {
@@ -440,6 +446,28 @@ int parseBinFile(u8 *fw_data, int fw_size, Firmware *fwData, int keep_cx)
 
 		/* if (!keep_cx) */
 		/* { */
+		/*
+		 * The sections must fill the file exactly. Add them up in 64
+		 * bits so that bogus sizes can't wrap around and pass.
+		 */
+		if ((u64)fwData->sec0_size + fwData->sec1_size +
+		    fwData->sec2_size + fwData->sec3_size !=
+		    (u64)fw_size - FW_HEADER_SIZE - FW_BYTES_ALIGN) {
+			pr_err("parseBinFile: Section sizes don't match the file size %d... ERROR %08X\n",
+				fw_size, ERROR_FILE_PARSE);
+			res = ERROR_FILE_PARSE;
+			goto END;
+		}
+
+		/* The CX version is read from section 2 */
+		if (fwData->sec2_size != 0 &&
+		    fwData->sec2_size < FW_CX_VERSION + sizeof(u16)) {
+			pr_err("parseBinFile: Section 2 too short (%u bytes)... ERROR %08X\n",
+				fwData->sec2_size, ERROR_FILE_PARSE);
+			res = ERROR_FILE_PARSE;
+			goto END;
+		}
+
 		dimension = fwData->sec0_size + fwData->sec1_size +
 			    fwData->sec2_size + fwData->sec3_size;
 		temp = fw_size;
