@@ -1397,6 +1397,11 @@ static ssize_t infoblock_getdata_show(struct device *dev,
 		goto END;
 	}
 	data = kmalloc(INFO_BLOCK_SIZE * sizeof(u8), GFP_KERNEL);
+	if (!data) {
+		count += scnprintf(&buf[count], PAGE_SIZE - count,
+				   "Out of memory\n");
+		goto END;
+	}
 	res = fts_writeReadU8UX(FTS_CMD_HW_REG_R, ADDR_SIZE_HW_REG,
 				ADDR_INFOBLOCK, data, INFO_BLOCK_SIZE,
 				DUMMY_HW_REG);
@@ -4459,6 +4464,8 @@ static int fts_probe(struct spi_device *client)
 
 
 ProbeErrorExit_7:
+	if (info->fwu_workqueue)
+		destroy_workqueue(info->fwu_workqueue);
 
 #ifdef CONFIG_TOUCHSCREEN_OFFLOAD
 	touch_offload_cleanup(&info->offload);
@@ -4516,6 +4523,9 @@ static void fts_remove(struct spi_device *client)
 
 	if (info->panel_follower.panel)
 		drm_panel_remove_follower(&info->panel_follower);
+
+	if (info->fwu_workqueue)
+		cancel_delayed_work_sync(&info->fwu_work);
 
 	/* Force the bus active throughout removal of the client */
 	fts_set_bus_ref(info, FTS_BUS_REF_FORCE_ACTIVE, true);
