@@ -1182,9 +1182,9 @@
 
 		reset-gpios = <&tlmm 67 GPIO_ACTIVE_LOW>;
 
-		pinctrl-names = "panel_active";
 		pinctrl-0 = <&sde_dsi_active &sde_te_active>;
 		pinctrl-1 = <&sde_dsi_suspend &sde_te_suspend>;
+		pinctrl-names = "default", "sleep";
 
 		port {
 			panel_in: endpoint {
