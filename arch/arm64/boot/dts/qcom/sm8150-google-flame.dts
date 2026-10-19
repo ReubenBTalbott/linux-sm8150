@@ -71,7 +71,7 @@
 	
 	thermal-zones {
 		/* PM8150 Thermals */
-		xo-therm {
+		xo-thermal {
 			thermal-sensors = <&pm8150_adc_tm 0>;
 			trips {
 				active-config0 {
@@ -82,7 +82,7 @@
 			};
 		};
 		
-		quiet-therm {
+		quiet-thermal {
 			thermal-sensors = <&pm8150_adc_tm 1>;
 			trips {
 				active-config0 {
@@ -93,7 +93,7 @@
 			};
 		};
 		
-		pa-therm {
+		pa-thermal {
 			thermal-sensors = <&pm8150_adc_tm 2>;
 			trips {
 				active-config0 {
@@ -105,7 +105,7 @@
 		};
 		
 		/* PM8150B Thermals */
-		disp-therm {
+		disp-thermal {
 			thermal-sensors = <&pm8150b_adc_tm 0>;
 			trips {
 				active-config0 {
@@ -116,7 +116,7 @@
 			};
 		};
 		
-		chg-therm {
+		chg-thermal {
 			thermal-sensors = <&pm8150b_adc_tm 1>;
 			trips {
 				active-config0 {
@@ -127,7 +127,7 @@
 			};
 		};
 		
-		usbc-therm {
+		usbc-thermal {
 			thermal-sensors = <&pm8150b_adc_tm 2>;
 			trips {
 				active-config0 {
@@ -139,7 +139,7 @@
 		};
 		
 		/* PM8150L Thermals */
-		rcam-therm {
+		rcam-thermal {
 			thermal-sensors = <&pm8150l_adc_tm 0>;
 			trips {
 				active-config0 {
@@ -150,7 +150,7 @@
 			};
 		};
 		
-		sdm-therm {
+		sdm-thermal {
 			thermal-sensors = <&pm8150l_adc_tm 1>;
 			trips {
 				active-config0 {
@@ -166,19 +166,7 @@
 			};
 		};
 		
-		sdm-therm-monitor {
-			thermal-sensors = <&pm8150l_adc_tm 1>;
-			trips {
-				active-config0 {
-					temperature = <125000>;
-					hysteresis = <1000>;
-					type = "passive";
-				};
-			};
-		};
-		
-		
-		btn-therm {
+		btn-thermal {
 			thermal-sensors = <&pm8150l_adc_tm 2>;
 			trips {
 				active-config0 {
@@ -194,9 +182,9 @@
 		compatible = "gpio-keys";
 		
 		pinctrl-names = "default";
-		pinctrl-0 = <&key_home>, <&key_vol_up>;
+		pinctrl-0 = <&key_vol_up>;
 		
-		vol_up {
+		key-vol-up {
 			label = "Volume Up";
 			gpios = <&pm8150_gpios 6 GPIO_ACTIVE_LOW>;
 			linux,input-type = <EV_KEY>;
@@ -358,7 +346,7 @@
 };
 
 &apps_rsc {
-	pm8150-rpmh-regulators {
+	regulators-0 {
 		compatible = "qcom,pm8150-rpmh-regulators";
 		qcom,pmic-id = "a";
 		
@@ -394,7 +382,6 @@
 			regulator-name = "pm8150_s4";
 			regulator-min-microvolt = <1800000>;
 			regulator-max-microvolt = <1800000>;
-			regulator-allow-set-load;
 			regulator-always-on;
 			regulator-boot-on;
 		};
@@ -543,7 +530,7 @@
 		};
 	};
 	
-	pm8150l-rpmh-regulators {
+	regulators-1 {
 		compatible = "qcom,pm8150l-rpmh-regulators";
 		qcom,pmic-id = "c";
 		
@@ -689,154 +676,93 @@
 &tlmm {
 	gpio-reserved-ranges = <130 1>; /* Ignore this GPIO to make TrustZone and Titan M happy and let up boot */
 	
-	fsa_usbc_ana_en: fsa_usbc_ana_en {
-		mux {
-			pins = "gpio100";
-			function = "gpio";
-		};
-		config {
-			pins = "gpio100";
-			drive-strength = <2>;
-			bias-disable;
-			output-low;
-		};
+	sde_dsi_active: sde-dsi-active-state {
+		pins = "gpio67";
+		function = "gpio";
+		drive-strength = <8>;
+		bias-disable;
 	};
-	
-	sde_dsi_active: sde_dsi_active {
-		mux {
-			pins = "gpio67";
-			function = "gpio";
-		};
-		config {
-			pins = "gpio67";
-			drive-strength = <8>;
-			bias-disable;
-		};
+
+	sde_dsi_suspend: sde-dsi-suspend-state {
+		pins = "gpio67";
+		function = "gpio";
+		drive-strength = <2>;
+		bias-pull-down;
 	};
-	
-	sde_dsi_suspend: sde_dsi_suspend {
-		mux {
-			pins = "gpio67";
-			function = "gpio";
-		};
-		config {
-			pins = "gpio67";
-			drive-strength = <2>;
-			bias-pull-down;
-		};
+
+	sde_te_active: sde-te-active-state {
+		pins = "gpio8";
+		function = "mdp_vsync";
+		drive-strength = <2>;
+		bias-pull-down;
 	};
-	
-	sde_te_active: sde_te_active {
-		mux {
-			pins = "gpio8";
-			function = "mdp_vsync";
-		};
-		config {
-			pins = "gpio8";
-			drive-strength = <2>;
-			bias-pull-down;
-		};
+
+	sde_te_suspend: sde-te-suspend-state {
+		pins = "gpio8";
+		function = "mdp_vsync";
+		drive-strength = <2>;
+		bias-pull-down;
 	};
-	
-	sde_te_suspend: sde_te_suspend {
-		mux {
-			pins = "gpio8";
-			function = "mdp_vsync";
-		};
-		config {
-			pins = "gpio8";
-			drive-strength = <2>;
-			bias-pull-down;
-		};
+
+	ts_active_suspend: ts-active-suspend-state {
+		pins = "gpio122";
+		function = "gpio";
+		drive-strength = <2>;
+		bias-disable;
 	};
-	
-	ts_active_suspend: ts_active_suspend {
-		mux {
-			pins = "gpio122";
-			function = "gpio";
-		};
-		config {
-			pins = "gpio122";
-			drive-strength = <2>;
-			bias-disable;
-		};
-	};
-	
-	qup_uart13_sleep: qup-uart13-sleep {
-		pinmux {
-			pins = "gpio43", "gpio44",
-			"gpio45", "gpio46";
-			function = "gpio";
-		};
-		
-		pinconf-cts {
+
+	qup_uart13_sleep: qup-uart13-sleep-state {
+		cts-pins {
 			/*
-			* Configure a pull-down on CTS to match the pull of
-			* the Bluetooth module.
-			*/
+			 * Configure a pull-down on CTS to match the pull of
+			 * the Bluetooth module.
+			 */
 			pins = "gpio43";
+			function = "gpio";
 			drive-strength = <2>;
 			bias-disable;
 		};
-		
-		pinconf-rts {
+
+		rts-pins {
 			/*
-			* Configure pull-down on RTS. As RTS is active low
-			* signal, pull it low to indicate the BT SoC that it
-			* can wakeup the system anytime from suspend state by
-			* pulling RX low (by sending wakeup bytes).
-			*/
+			 * Configure pull-down on RTS. As RTS is active low
+			 * signal, pull it low to indicate the BT SoC that it
+			 * can wakeup the system anytime from suspend state by
+			 * pulling RX low (by sending wakeup bytes).
+			 */
 			pins = "gpio44";
+			function = "gpio";
 			drive-strength = <2>;
 			bias-pull-down;
 		};
-		
-		pinconf-tx {
+
+		tx-pins {
 			/*
-			* Configure pull-up on TX when it isn't actively driven
-			* to prevent BT SoC from receiving garbage during sleep.
-			*/
+			 * Configure pull-up on TX when it isn't actively driven
+			 * to prevent BT SoC from receiving garbage during sleep.
+			 */
 			pins = "gpio45";
+			function = "gpio";
 			drive-strength = <2>;
 			bias-pull-up;
 		};
-		
-		pinconf-rx {
+
+		rx-pins {
 			/*
-			* Configure a pull-up on RX. This is needed to avoid
-			* garbage data when the TX pin of the Bluetooth module
-			* is floating which may cause spurious wakeups.
-			*/
+			 * Configure a pull-up on RX. This is needed to avoid
+			 * garbage data when the TX pin of the Bluetooth module
+			 * is floating which may cause spurious wakeups.
+			 */
 			pins = "gpio46";
+			function = "gpio";
 			drive-strength = <2>;
 			bias-disable;
-		};
-	};
-	
-	cam_sensor_pmic_active: cam_sensor_pmic_active {
-		mux {
-			pins = "gpio102";
-			function = "gpio";
-		};
-		config {
-			pins = "gpio102";
-			bias-pull-up;
-			output-high;
-			drive-strength = <2>;
 		};
 	};
 };
 
 &pm8150_gpios {
-	key_home: key_home {
-		pins = "gpio1";
-		function = "normal";
-		input-enable;
-		bias-pull-up;
-		power-source = <0>;
-	};
-	
-	key_vol_up: key_vol_up {
+	key_vol_up: key-vol-up-state {
 		pins = "gpio6";
 		function = "normal";
 		input-enable;
@@ -898,7 +824,7 @@
 };
 
 &pm8150b_gpios {
-	fg_int_default: fg_int_default {
+	fg_int_default: fg-int-default-state {
 		pins = "gpio8";
 		function = "normal";
 		bias-pull-up;
@@ -1365,9 +1291,6 @@
 		status = "disabled";
 		reg = <0x60>;
 		
-		pinctrl-names = "cam_pmic_en";
-		pinctrl-0 = <&cam_sensor_pmic_active>;
-		
 		maxim,enable-gpio = <&tlmm 102 GPIO_ACTIVE_HIGH>;
 		
 		regulators {
@@ -1514,9 +1437,7 @@
 	status = "okay";
 	
 	vdda-phy-supply = <&vreg_l5a_0p88>;
-	vdda-phy-max-microamp = <90200>;
 	vdda-pll-supply = <&vreg_l3c_1p2>;
-	vdda-pll-max-microamp = <19000>;
 };
 
 &remoteproc_adsp {
