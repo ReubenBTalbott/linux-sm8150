@@ -373,4 +373,4 @@ module_mipi_dsi_driver(nt37280_lh568wf3_ed01_driver);
 
 MODULE_AUTHOR("Andrew Gigena <mail@andrewgigena.dev>"); 
 MODULE_DESCRIPTION("MIPI-DSI based Panel Driver for LH568WF3-ED01 AMOLED LCD with a NT37280 controller");
-MODULE_LICENSE("GPL V2");
+MODULE_LICENSE("GPL");
