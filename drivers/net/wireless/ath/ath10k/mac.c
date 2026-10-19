@@ -6708,6 +6708,17 @@ static int ath10k_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 					  ar->wmi.peer_param->authorize, 1);
 
 exit:
+	/* mac80211 frees the key even if removing it from the firmware
+	 * failed, so don't keep a reference to it.
+	 */
+	if (cmd == DISABLE_KEY) {
+		spin_lock_bh(&ar->data_lock);
+		peer = ath10k_peer_find(ar, arvif->vdev_id, peer_addr);
+		if (peer && peer->keys[key->keyidx] == key)
+			peer->keys[key->keyidx] = NULL;
+		spin_unlock_bh(&ar->data_lock);
+	}
+
 	mutex_unlock(&ar->conf_mutex);
 	return ret;
 }
