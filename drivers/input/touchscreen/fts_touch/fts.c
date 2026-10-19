@@ -4095,7 +4095,6 @@ static int fts_probe(struct spi_device *client)
 	struct fts_ts_info *info = NULL;
 	int error = 0;
 	struct device_node *dp = client->dev.of_node;
-	int retval;
 	int skip_5_1 = 0;
 	u16 bus_type;
 
@@ -4159,6 +4158,7 @@ static int fts_probe(struct spi_device *client)
 					   GFP_KERNEL);
 		if (!info->board) {
 			pr_err("ERROR:info.board kzalloc failed\n");
+			error = -ENOMEM;
 			goto ProbeErrorExit_1;
 		}
 		error = parse_dt(&client->dev, info->board);
@@ -4167,14 +4167,14 @@ static int fts_probe(struct spi_device *client)
 	}
 
 	pr_info("SET Regulators:\n");
-	retval = fts_get_reg(info, true);
-	if (retval < 0) {
-		pr_err("ERROR: %s: Failed to get regulators\n", __func__);
+	error = fts_get_reg(info, true);
+	if (error < 0) {
+		dev_err_probe(&client->dev, error, "Failed to get regulators\n");
 		goto ProbeErrorExit_1;
 	}
 
-	retval = fts_enable_reg(info, true);
-	if (retval < 0) {
+	error = fts_enable_reg(info, true);
+	if (error < 0) {
 		pr_err("%s: ERROR Failed to enable regulators\n", __func__);
 		goto ProbeErrorExit_2;
 	}
@@ -4426,6 +4426,7 @@ static int fts_probe(struct spi_device *client)
 					      WQ_CPU_INTENSIVE, 1);
 	if (!info->fwu_workqueue) {
 		pr_err("ERROR: Cannot create fwu work thread\n");
+		error = -ENOMEM;
 		goto ProbeErrorExit_7;
 	}
 	INIT_DELAYED_WORK(&info->fwu_work, fts_fw_update_auto);
@@ -4504,6 +4505,7 @@ ProbeErrorExit_2:
 	fts_get_reg(info, false);
 
 ProbeErrorExit_1:
+	dev_set_drvdata(&client->dev, NULL);
 	kfree(info);
 
 ProbeErrorExit_0:
