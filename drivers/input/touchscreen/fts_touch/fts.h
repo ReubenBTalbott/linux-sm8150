@@ -379,6 +379,7 @@ struct fts_ts_info {
 	struct fts_disp_extinfo extinfo;	/* Display extended info */
 
 	struct drm_panel_follower panel_follower; /* screen on/off */
+	bool pm_dropped_screen_ref;	/* system suspend put us to sleep */
 	int display_refresh_rate;	/* Display rate in Hz */
 	bool sensor_sleep;		/* True if suspend called */
 	struct wakeup_source *wakesrc;	/* Wake Lock struct */

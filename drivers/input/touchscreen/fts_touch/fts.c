@@ -4587,6 +4587,17 @@ static int fts_pm_suspend(struct device *dev)
 {
 	struct fts_ts_info *info = dev_get_drvdata(dev);
 
+	/*
+	 * The touchscreen suspends before the panel, so the display may
+	 * still be on. Put the controller to sleep now; enabling the panel on
+	 * resume wakes it up again.
+	 */
+	if (info->bus_refmask & FTS_BUS_REF_SCREEN_ON) {
+		fts_set_bus_ref(info, FTS_BUS_REF_SCREEN_ON, false);
+		flush_work(&info->suspend_work);
+		info->pm_dropped_screen_ref = true;
+	}
+
 	if (info->bus_refmask)
 		pr_warn("%s: bus_refmask 0x%X\n", __func__, info->bus_refmask);
 
@@ -4601,6 +4612,23 @@ static int fts_pm_suspend(struct device *dev)
 
 static int fts_pm_resume(struct device *dev)
 {
+	struct fts_ts_info *info = dev_get_drvdata(dev);
+	struct drm_panel *panel = info->panel_follower.panel;
+
+	if (!info->pm_dropped_screen_ref)
+		return 0;
+	info->pm_dropped_screen_ref = false;
+
+	/* Wake up again if the display stayed on, or if we follow no panel */
+	if (panel) {
+		mutex_lock(&panel->follower_lock);
+		if (panel->enabled)
+			fts_set_bus_ref(info, FTS_BUS_REF_SCREEN_ON, true);
+		mutex_unlock(&panel->follower_lock);
+	} else {
+		fts_set_bus_ref(info, FTS_BUS_REF_SCREEN_ON, true);
+	}
+
 	return 0;
 }
 
