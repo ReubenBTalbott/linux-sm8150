@@ -1222,7 +1222,6 @@
 };
 
 &i2c0 {
-	status = "okay";
 	clock-frequency = <400000>;
 	/* Renesas IDTP9221 Qi charger (idt,p9221) @ 0 */
 };
@@ -1396,8 +1395,7 @@
 	};
 };
 
-&i2c15{
-	status = "okay";
+&i2c15 {
 	clock-frequency = <100000>;
 	/* cirrus,cs35l36 @ 40 */
 	/* cirrus,cs35l36 @ 41 */
@@ -1405,7 +1403,6 @@
 };
 
 &i2c18 {
-	status = "okay";
 	clock-frequency = <100000>;
 	/* samsung,s2mpg01 @ 66 */
 };
