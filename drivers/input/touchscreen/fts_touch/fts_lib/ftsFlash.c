@@ -101,10 +101,14 @@ int getFWdata(const char *pathToFile, u8 **data, int *size)
 		}
 	}
 
-	res = request_firmware(&fw, fw_name, &info->client->dev);
-	if (res) {
-		pr_err("getFWdata: request_firmware failed for '%s'! ERROR %08X\n",
-		       fw_name, ERROR_FILE_NOT_FOUND);
+	/* The update file is optional: don't warn when it isn't installed. */
+	res = firmware_request_nowarn(&fw, fw_name, &info->client->dev);
+	if (res == -ENOENT) {
+		pr_debug("getFWdata: '%s' not found\n", fw_name);
+		return ERROR_FILE_NOT_FOUND;
+	} else if (res) {
+		pr_err("getFWdata: request_firmware failed for '%s': %d\n",
+		       fw_name, res);
 		return ERROR_FILE_NOT_FOUND;
 	}
 
@@ -151,8 +155,7 @@ int readFwFile(const char *path, Firmware *fw, int keep_cx)
 
 	res = getFWdata(path, &orig_data, &orig_size);
 	if (res < OK) {
-		pr_err("readFwFile: impossible retrieve FW... ERROR %08X\n",
-			ERROR_MEMH_READ);
+		/* getFWdata() has already reported why. */
 		return res | ERROR_MEMH_READ;
 	}
 	res = parseBinFile(orig_data, orig_size, fw, keep_cx);
@@ -189,8 +192,9 @@ int flashProcedure(const char *path, int force, int keep_cx)
 
 	res = readFwFile(path, &fw, keep_cx);
 	if (res < OK) {
-		pr_err("flashProcedure: ERROR %08X\n",
-			 (res | ERROR_FLASH_PROCEDURE));
+		if ((res & 0xF000000F) != ERROR_FILE_NOT_FOUND)
+			pr_err("flashProcedure: ERROR %08X\n",
+			       (res | ERROR_FLASH_PROCEDURE));
 		kfree(fw.data);
 		return res | ERROR_FLASH_PROCEDURE;
 	}

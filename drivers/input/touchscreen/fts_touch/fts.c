@@ -3098,7 +3098,7 @@ static int fts_fw_update(struct fts_ts_info *info)
 		ret = flashProcedure(info->board->fw_name, info->reflash_fw,
 				     keep_cx);
 		if ((ret & 0xF000000F) == ERROR_FILE_NOT_FOUND) {
-			pr_err("%s: firmware file not found. Bypassing update.\n",
+			pr_info("%s: no firmware update file, keeping the controller firmware\n",
 				__func__);
 			ret = 0;
 			goto out;
