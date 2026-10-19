@@ -157,6 +157,13 @@ static int sm8150_tdm_snd_hw_params(struct snd_pcm_substream *substream,
 		}
 	}
 
+	if (rtd->dai_link->num_codecs > ARRAY_SIZE(cs35l41_tdm_channel_map)) {
+		dev_err(rtd->dev, "%s: too many codecs (%u)\n", __func__,
+			rtd->dai_link->num_codecs);
+		ret = -EINVAL;
+		goto end;
+	}
+
 	for_each_rtd_codec_dais(rtd, j, codec_dai) {
 		/* call dai driver's set_sysclk() callback */
 		ret = snd_soc_dai_set_sysclk(codec_dai, 0,
