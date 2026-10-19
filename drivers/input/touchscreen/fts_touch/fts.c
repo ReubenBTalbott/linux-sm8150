@@ -4604,6 +4604,11 @@ static int fts_pm_suspend(struct device *dev)
 	if (info->resume_bit == 1 || info->sensor_sleep == false) {
 		pr_warn("%s: can't suspend because touch bus is in use!\n",
 			__func__);
+		/* Resume isn't called when suspend fails: undo it here */
+		if (info->pm_dropped_screen_ref) {
+			info->pm_dropped_screen_ref = false;
+			fts_set_bus_ref(info, FTS_BUS_REF_SCREEN_ON, true);
+		}
 		return -EBUSY;
 	}
 
