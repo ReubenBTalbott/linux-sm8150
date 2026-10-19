@@ -364,6 +364,11 @@ static int idtp9418_gpio_init(struct idtp9418_device_info *di)
 		}
 	}
 
+	return 0;
+}
+
+static int idtp9418_request_irqs(struct idtp9418_device_info *di)
+{
 	struct
 	{
 		const char *name;
@@ -398,6 +403,7 @@ static int idtp9418_gpio_init(struct idtp9418_device_info *di)
 		if (ret)
 		{
 			dev_err(di->dev, "failed to request gpio \"%s\" IRQ\n", irq_map[i].name);
+			return ret;
 		}
 	}
 
@@ -658,12 +664,21 @@ static int idtp9418_set_property(struct power_supply *psy,
 	}
 }
 
+static void idtp9418_cancel_work(void *data)
+{
+	struct idtp9418_device_info *di = data;
+
+	cancel_delayed_work_sync(&di->irq_work);
+	cancel_delayed_work_sync(&di->hall_irq_work);
+	cancel_delayed_work_sync(&di->charge_monitor_work);
+}
+
 static int idtp9418_probe(struct i2c_client *client)
 {
 	int ret;
 	struct idtp9418_device_info *di;
 	struct i2c_adapter *adapter = to_i2c_adapter(client->dev.parent);
-	struct power_supply_config idtp_cfg;
+	struct power_supply_config idtp_cfg = {};
 	struct power_supply_desc *psy_desc;
 
 	if (!i2c_check_functionality(adapter, I2C_FUNC_SMBUS_BYTE))
@@ -688,8 +703,8 @@ static int idtp9418_probe(struct i2c_client *client)
 	di->charge_limit = LIMIT_SOC;
 
 	di->regmap = devm_regmap_init_i2c(client, &i2c_idtp9418_regmap_config);
-	if (!di->regmap)
-		return -ENODEV;
+	if (IS_ERR(di->regmap))
+		return PTR_ERR(di->regmap);
 	di->bus.read = idtp9418_read;
 	di->bus.write = idtp9418_write;
 	di->bus.read_buf = idtp9418_read_buffer;
@@ -699,24 +714,16 @@ static int idtp9418_probe(struct i2c_client *client)
 	device_init_wakeup(&client->dev, true);
 	i2c_set_clientdata(client, di);
 
+	INIT_DELAYED_WORK(&di->irq_work, idtp9418_irq_work);
+	INIT_DELAYED_WORK(&di->hall_irq_work, idtp9418_irq_hall_work);
+	INIT_DELAYED_WORK(&di->charge_monitor_work, idtp9418_charge_monitor_work);
+
 	ret = idtp9418_gpio_init(di);
 	if (ret < 0)
 	{
 		dev_err(di->dev, "%s: gpio init error [%d]\n", __func__, ret);
 		return ret;
 	}
-
-	if (sysfs_create_group(&client->dev.kobj, &sysfs_group_attrs))
-	{
-		dev_err(&client->dev, "create sysfs attrs failed!\n");
-		return -EIO;
-	}
-
-	idtp_cfg.drv_data = di;
-
-	INIT_DELAYED_WORK(&di->irq_work, idtp9418_irq_work);
-	INIT_DELAYED_WORK(&di->hall_irq_work, idtp9418_irq_hall_work);
-	INIT_DELAYED_WORK(&di->charge_monitor_work, idtp9418_charge_monitor_work);
 
 	idtp9418_set_chip_power(di, false);
 
@@ -735,6 +742,7 @@ static int idtp9418_probe(struct i2c_client *client)
 	psy_desc->property_is_writeable = idtp9418_property_is_writeable;
 
 	idtp_cfg.drv_data = di;
+	idtp_cfg.fwnode = dev_fwnode(&client->dev);
 
 	di->psy = devm_power_supply_register(&client->dev, psy_desc, &idtp_cfg);
 	if (IS_ERR(di->psy))
@@ -743,20 +751,28 @@ static int idtp9418_probe(struct i2c_client *client)
 		return PTR_ERR(di->psy);
 	}
 
+	/*
+	 * The work items use the power supply and are queued by the IRQ
+	 * handlers. Managed resources are released in reverse order, so
+	 * register the cancellation after the power supply and request the
+	 * IRQs last: on teardown the IRQs go first, then the work, then the
+	 * power supply.
+	 */
+	ret = devm_add_action_or_reset(&client->dev, idtp9418_cancel_work, di);
+	if (ret)
+		return ret;
+
+	ret = idtp9418_request_irqs(di);
+	if (ret)
+		return ret;
+
 	return 0;
 }
 
-static void idtp9418_remove(struct i2c_client *client)
-{
-	sysfs_remove_group(&client->dev.kobj, &sysfs_group_attrs);
-
-	struct idtp9418_device_info *di = i2c_get_clientdata(client);
-	i2c_set_clientdata(client, NULL);
-
-	cancel_delayed_work_sync(&di->irq_work);
-	cancel_delayed_work_sync(&di->hall_irq_work);
-	cancel_delayed_work_sync(&di->charge_monitor_work);
-}
+static const struct attribute_group *idtp9418_groups[] = {
+	&sysfs_group_attrs,
+	NULL
+};
 
 static void idtp9418_shutdown(struct i2c_client *client)
 {
@@ -767,9 +783,9 @@ static struct i2c_driver idtp9418_driver = {
 		.name = IDT_DRIVER_NAME,
 		.owner = THIS_MODULE,
 		.of_match_table = idt_match_table,
+		.dev_groups = idtp9418_groups,
 	},
 	.probe = idtp9418_probe,
-	.remove = idtp9418_remove,
 	.shutdown = idtp9418_shutdown,
 	.id_table = idtp9418_id,
 };
