@@ -3,6 +3,8 @@
 #
 config TOUCHSCREEN_NT36523_SPI
 	tristate "Novatek NT36523 no flash SPI driver"
+	# Follows the display panel, so it can't be built in with DRM=m
+	depends on DRM || !DRM
 	default n
 	help
 	  Say Y here if you have a Novatek NT36523 no flash touchscreen connected

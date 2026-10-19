@@ -25,10 +25,6 @@
 #include <linux/debugfs.h>
 #include <linux/of_irq.h>
 
-#ifdef CONFIG_DRM
-#include <drm/drm_notifier.h>
-#endif
-
 #include "nt36xxx.h"
 
 #if NVT_TOUCH_ESD_PROTECT
@@ -44,10 +40,6 @@ uint8_t esd_retry = 0;
 #endif /* #if NVT_TOUCH_ESD_PROTECT */
 
 struct nvt_ts_data *ts;
-
-#ifdef CONFIG_DRM
-static int nvt_drm_notifier_callback(struct notifier_block *self, unsigned long event, void *data);
-#endif
 
 static int32_t nvt_ts_suspend(struct device *dev);
 static int32_t nvt_ts_resume(struct device *dev);
@@ -1194,6 +1186,36 @@ static void nvt_resume_work(struct work_struct *work)
 	nvt_ts_resume(&ts_core->client->dev);
 }
 
+/* Suspend before the panel is disabled, resume once it is enabled again */
+static int nvt_panel_enabled(struct drm_panel_follower *follower)
+{
+	struct nvt_ts_data *ts_data =
+		container_of(follower, struct nvt_ts_data, panel_follower);
+
+	flush_workqueue(ts_data->event_wq);
+	queue_work(ts_data->event_wq, &ts_data->resume_work);
+
+	return 0;
+}
+
+static int nvt_panel_disabling(struct drm_panel_follower *follower)
+{
+	struct nvt_ts_data *ts_data =
+		container_of(follower, struct nvt_ts_data, panel_follower);
+
+	flush_workqueue(ts_data->event_wq);
+	queue_work(ts_data->event_wq, &ts_data->suspend_work);
+	/* Let the controller go to sleep before the panel powers down */
+	flush_work(&ts_data->suspend_work);
+
+	return 0;
+}
+
+static const struct drm_panel_follower_funcs nvt_panel_follower_funcs = {
+	.panel_enabled = nvt_panel_enabled,
+	.panel_disabling = nvt_panel_disabling,
+};
+
 /*******************************************************
 Description:
 	Novatek touchscreen driver probe function.
@@ -1488,29 +1510,36 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 	INIT_WORK(&ts->resume_work, nvt_resume_work);
 	INIT_WORK(&ts->suspend_work, nvt_suspend_work);
 
-#ifdef CONFIG_DRM
-	ts->drm_notif.notifier_call = nvt_drm_notifier_callback;
-	ret = mi_drm_register_client(&ts->drm_notif);
-	if(ret) {
-		NVT_ERR("register drm_notifier failed. ret=%d\n", ret);
+	/* Awake, so a follower callback for an enabled panel is a no-op */
+	bTouchIsAwake = 1;
+
+	ts->panel_follower.funcs = &nvt_panel_follower_funcs;
+	ret = drm_panel_add_follower(&ts->client->dev, &ts->panel_follower);
+	if (ret == -ENODEV) {
+		/* No panel to follow, keep the controller awake */
+		NVT_LOG("Not following a panel\n");
+	} else if (ret) {
+		dev_err_probe(&client->dev, ret, "Failed to follow the panel\n");
 		goto err_register_drm_notif_failed;
 	}
-#endif
 
-	bTouchIsAwake = 1;
 	disable_pen_input_device(false);
 	NVT_LOG("end\n");
 
 	nvt_irq_enable(true);
 
+	/* Nothing tells us to sleep if the panel is already off */
+	if (ts->panel_follower.panel) {
+		mutex_lock(&ts->panel_follower.panel->follower_lock);
+		if (!ts->panel_follower.panel->enabled)
+			queue_work(ts->event_wq, &ts->suspend_work);
+		mutex_unlock(&ts->panel_follower.panel->follower_lock);
+	}
+
 	return 0;
 
-#ifdef CONFIG_DRM
-	if (mi_drm_unregister_client(&ts->drm_notif))
-		NVT_ERR("Error occurred while unregistering drm_notifier.\n");
 err_register_drm_notif_failed:
-#endif
-
+	destroy_workqueue(ts->event_wq);
 err_alloc_work_thread_failed:
 
 #if NVT_TOUCH_ESD_PROTECT
@@ -1579,10 +1608,10 @@ static void nvt_ts_remove(struct spi_device *client)
 {
 	NVT_LOG("Removing driver...\n");
 
-#ifdef CONFIG_DRM
-	if (mi_drm_unregister_client(&ts->drm_notif))
-		NVT_ERR("Error occurred while unregistering drm_notifier.\n");
-#endif
+	if (ts->panel_follower.panel)
+		drm_panel_remove_follower(&ts->panel_follower);
+	/* Drain the suspend queued by removing the follower */
+	destroy_workqueue(ts->event_wq);
 
 #if NVT_TOUCH_ESD_PROTECT
 	if (nvt_esd_check_wq) {
@@ -1627,10 +1656,8 @@ static void nvt_ts_shutdown(struct spi_device *client)
 
 	nvt_irq_enable(false);
 
-#ifdef CONFIG_DRM
-	if (mi_drm_unregister_client(&ts->drm_notif))
-		NVT_ERR("Error occurred while unregistering drm_notifier.\n");
-#endif
+	if (ts->panel_follower.panel)
+		drm_panel_remove_follower(&ts->panel_follower);
 
 	destroy_workqueue(ts->event_wq);
 
@@ -1805,32 +1832,6 @@ static int32_t nvt_ts_resume(struct device *dev)
 }
 
 
-#ifdef CONFIG_DRM
-static int nvt_drm_notifier_callback(struct notifier_block *self, unsigned long event, void *data)
-{
-	int blank = *(enum drm_notifier_data *)data;
-	struct nvt_ts_data *ts_data =
-		container_of(self, struct nvt_ts_data, drm_notif);
-
-	if (data && ts_data) {
-		if (event == MI_DRM_EARLY_EVENT_BLANK) {
-			if (blank == MI_DRM_BLANK_POWERDOWN) {
-				NVT_LOG("event=%lu, *blank=%d\n", event, blank);
-				flush_workqueue(ts_data->event_wq);
-				queue_work(ts_data->event_wq, &ts_data->suspend_work);
-			}
-		} else if (event == MI_DRM_EVENT_BLANK) {
-			if (blank == MI_DRM_BLANK_UNBLANK) {
-				NVT_LOG("event=%lu, *blank=%d\n", event, blank);
-				flush_workqueue(ts_data->event_wq);
-				queue_work(ts_data->event_wq, &ts_data->resume_work);
-			}
-		}
-	}
-
-	return 0;
-}
-#endif
 
 static int nvt_pm_suspend(struct device *dev)
 {
