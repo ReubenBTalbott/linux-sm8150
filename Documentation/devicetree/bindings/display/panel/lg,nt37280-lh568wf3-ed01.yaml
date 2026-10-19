@@ -1,0 +1,70 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/display/panel/lg,nt37280-lh568wf3-ed01.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: LG LH568WF3-ED01 AMOLED panel with a Novatek NT37280 DDIC
+
+maintainers:
+  - Reuben Talbott <reuben@talbott.ws>
+
+description:
+  The LG LH568WF3-ED01 is the 5.68 inch, 1080x2280 pixel AMOLED panel of the
+  Google Pixel 4. It is driven by a Novatek NT37280 display driver IC over a
+  four lane MIPI DSI link and uses Display Stream Compression.
+
+allOf:
+  - $ref: panel-common.yaml#
+
+properties:
+  compatible:
+    const: lg,nt37280-lh568wf3-ed01
+
+  reg:
+    maxItems: 1
+
+  port: true
+  reset-gpios: true
+
+  vddio-supply:
+    description: I/O supply
+
+  vci-supply:
+    description: Analog supply
+
+required:
+  - compatible
+  - reg
+  - port
+  - reset-gpios
+  - vddio-supply
+  - vci-supply
+
+additionalProperties: false
+
+examples:
+  - |
+    #include <dt-bindings/gpio/gpio.h>
+
+    dsi {
+        #address-cells = <1>;
+        #size-cells = <0>;
+
+        panel@0 {
+            compatible = "lg,nt37280-lh568wf3-ed01";
+            reg = <0>;
+
+            vddio-supply = <&vreg_l14a_1p8>;
+            vci-supply = <&vreg_l4c_1p8>;
+
+            reset-gpios = <&tlmm 67 GPIO_ACTIVE_LOW>;
+
+            port {
+                endpoint {
+                    remote-endpoint = <&mdss_dsi0_out>;
+                };
+            };
+        };
+    };
+...
