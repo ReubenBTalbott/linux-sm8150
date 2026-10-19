@@ -696,10 +696,7 @@ static const struct power_supply_desc smb_psy_desc = {
 /* Init sequence derived from vendor downstream driver */
 static const struct smb_init_register smb5_init_seq[] = {
 	{ .addr = USBIN_CMD_IL, .mask = USBIN_SUSPEND_BIT, .val = 0 },
-	/*
-	 * Disable Type-C factory mode and stay in Attached.SRC state when VCONN
-	 * over-current happens
-	 */
+	/* Don't start APSD on CC detection */
 	{ .addr = TYPE_C_CFG,
 	  .mask = APSD_START_ON_CC_BIT,
 	  .val = 0 },
