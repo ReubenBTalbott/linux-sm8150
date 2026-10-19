@@ -4230,9 +4230,12 @@ static int fts_probe(struct spi_device *client)
 	/* __set_bit(BTN_TOOL_FINGER, info->input_dev->keybit); */
 	/* __set_bit(BTN_TOOL_PEN, info->input_dev->keybit); */
 
-	input_mt_init_slots(info->input_dev, TOUCH_ID_MAX, INPUT_MT_DIRECT);
-
-	/* input_mt_init_slots(info->input_dev, TOUCH_ID_MAX); */
+	error = input_mt_init_slots(info->input_dev, TOUCH_ID_MAX,
+				    INPUT_MT_DIRECT);
+	if (error) {
+		pr_err("ERROR: Cannot init multitouch slots\n");
+		goto ProbeErrorExit_5_1;
+	}
 
 	input_set_abs_params(info->input_dev, ABS_MT_POSITION_X, X_AXIS_MIN,
 			     info->board->x_axis_max, 0, 0);
