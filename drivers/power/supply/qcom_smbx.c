@@ -304,7 +304,12 @@ static int smb_apsd_get_charger_type(struct smb_chip *chip, int *val)
 
 	if (stat & CDP_CHARGER_BIT)
 		*val = POWER_SUPPLY_USB_TYPE_CDP;
-	else if (stat & (DCP_CHARGER_BIT | OCP_CHARGER_BIT | FLOAT_CHARGER_BIT))
+	else if (stat & (DCP_CHARGER_BIT | OCP_CHARGER_BIT))
+		*val = POWER_SUPPLY_USB_TYPE_DCP;
+	else if ((stat & FLOAT_CHARGER_BIT) && chip->gen == SMB5)
+		/* Not a known charger type: limited to 500 mA, as for SDP */
+		*val = POWER_SUPPLY_USB_TYPE_UNKNOWN;
+	else if (stat & FLOAT_CHARGER_BIT)
 		*val = POWER_SUPPLY_USB_TYPE_DCP;
 	else /* SDP_CHARGER_BIT (or others) */
 		*val = POWER_SUPPLY_USB_TYPE_SDP;
