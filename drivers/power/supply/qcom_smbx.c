@@ -730,6 +730,13 @@ static const struct power_supply_desc smb_psy_desc = {
 
 /* Init sequence derived from vendor downstream driver */
 static const struct smb_init_register smb5_init_seq[] = {
+	/*
+	 * Limit the input to what a USB 2.0 port provides, rather than to
+	 * whatever the bootloader left, until the source is detected.
+	 */
+	{ .addr = USBIN_CURRENT_LIMIT_CFG,
+	  .mask = 0xff,
+	  .val = SDP_CURRENT_UA / CURRENT_SCALE_FACTOR },
 	{ .addr = USBIN_CMD_IL, .mask = USBIN_SUSPEND_BIT, .val = 0 },
 	/* Don't start APSD on CC detection */
 	{ .addr = TYPE_C_CFG,
@@ -751,7 +758,10 @@ static const struct smb_init_register smb5_init_seq[] = {
 	{ .addr = USBIN_OPTIONS_1_CFG,
 	  .mask = AUTO_SRC_DETECT_BIT,
 	  .val = AUTO_SRC_DETECT_BIT },
-	/* Set the default SDP charger type to a 500ma USB 2.0 port */
+	/*
+	 * Use the high-current mode with the input current limit set by
+	 * software, rather than one picked by the hardware after APSD.
+	 */
 	{ .addr = USBIN_ICL_OPTIONS,
 	  .mask = USBIN_MODE_CHG_BIT,
 	  .val = USBIN_MODE_CHG_BIT },
@@ -760,7 +770,7 @@ static const struct smb_init_register smb5_init_seq[] = {
 	  .val = 0 },
 	{ .addr = USBIN_LOAD_CFG,
 	  .mask = ICL_OVERRIDE_AFTER_APSD_BIT,
-	  .val = 0 },
+	  .val = ICL_OVERRIDE_AFTER_APSD_BIT },
 	/* Disable watchdog */
 	{ .addr = SNARL_BARK_BITE_WD_CFG, .mask = 0xff, .val = 0 },
 	{ .addr = WD_CFG,
