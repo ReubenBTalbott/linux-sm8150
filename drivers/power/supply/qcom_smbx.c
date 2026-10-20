@@ -9,7 +9,6 @@
  */
 
 #include <linux/bits.h>
-#include <linux/devm-helpers.h>
 #include <linux/iio/consumer.h>
 #include <linux/interrupt.h>
 #include <linux/kernel.h>
@@ -178,6 +177,7 @@ enum smb_generation {
 #define CDP_CURRENT_UA					1500000
 #define DCP_CURRENT_UA					1500000
 #define CURRENT_MAX_UA					DCP_CURRENT_UA
+#define USBIN_CURRENT_LIMIT_MAX_UA			4800000
 
 /* pmi8998 registers represent current in increments of 1/40th of an amp */
 #define CURRENT_SCALE_FACTOR				25000
@@ -413,16 +413,49 @@ static inline int smb_get_current_limit(struct smb_chip *chip,
 static int smb_set_current_limit(struct smb_chip *chip, unsigned int val)
 {
 	unsigned char val_raw;
+	int rc;
 
-	if (val > 4800000) {
+	if (val > USBIN_CURRENT_LIMIT_MAX_UA) {
 		dev_err(chip->dev,
-			"Can't set current limit higher than 4800000uA");
+			"Can't set current limit higher than %duA",
+			USBIN_CURRENT_LIMIT_MAX_UA);
 		return -EINVAL;
 	}
 	val_raw = val / CURRENT_SCALE_FACTOR;
 
-	return regmap_write(chip->regmap, chip->base + USBIN_CURRENT_LIMIT_CFG,
-			    val_raw);
+	rc = regmap_write(chip->regmap, chip->base + USBIN_CURRENT_LIMIT_CFG,
+			  val_raw);
+	if (rc < 0)
+		dev_err(chip->dev, "Couldn't set input current limit: %d\n", rc);
+
+	return rc;
+}
+
+/*
+ * Return the input current offered by the supplier, a USB Type-C port
+ * controller: the current advertised by a Type-C source, or that of a
+ * USB Power Delivery contract. Return 0 if there is no supplier, it
+ * can't be read, or the source only advertises the default USB current.
+ *
+ * This reads the current offered, not whether the port may sink power
+ * (the supplier's online). A port can withdraw that while it still
+ * reports a current, as while the sink is off during a Power Delivery
+ * hard reset, and the limit is then kept. Suspending the input then
+ * needs a way to resume that doesn't depend on the input reading as
+ * valid in the status work.
+ */
+static unsigned int smb_get_supplier_current_limit(struct power_supply *psy)
+{
+	union power_supply_propval val;
+	int rc;
+
+	rc = power_supply_get_property_from_supplier(psy,
+						     POWER_SUPPLY_PROP_CURRENT_MAX,
+						     &val);
+	if (rc || val.intval <= 0)
+		return 0;
+
+	return min(val.intval, USBIN_CURRENT_LIMIT_MAX_UA);
 }
 
 static void smb_status_change_work(struct work_struct *work)
@@ -438,9 +471,14 @@ static void smb_status_change_work(struct work_struct *work)
 	attach_gen = chip->attach_gen;
 	mutex_unlock(&chip->lock);
 
-	smb_get_prop_usb_online(chip, &usb_online);
-	if (!usb_online)
+	rc = smb_get_prop_usb_online(chip, &usb_online);
+	if (rc < 0 || !usb_online)
 		return;
+
+	/* What the Type-C source offers takes precedence, as on Android */
+	current_ua = smb_get_supplier_current_limit(chip->chg_psy);
+	if (current_ua)
+		goto set_limit;
 
 	for (count = 0; count < 3; count++) {
 		dev_dbg(chip->dev, "get charger type retry %d\n", count);
@@ -477,6 +515,7 @@ static void smb_status_change_work(struct work_struct *work)
 		break;
 	}
 
+set_limit:
 	mutex_lock(&chip->lock);
 	/*
 	 * Don't apply a limit found for a source that has been unplugged
@@ -699,6 +738,21 @@ static irqreturn_t smb_handle_usb_plugin(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
+static void smb_external_power_changed(struct power_supply *psy)
+{
+	struct smb_chip *chip = power_supply_get_drvdata(psy);
+
+	/*
+	 * Apply a limit from the supplier straight away. Otherwise leave
+	 * source detection the time it needs after the cable is plugged in.
+	 */
+	if (smb_get_supplier_current_limit(psy))
+		mod_delayed_work(system_percpu_wq, &chip->status_change_work, 0);
+	else
+		schedule_delayed_work(&chip->status_change_work,
+				      msecs_to_jiffies(1500));
+}
+
 static irqreturn_t smb_handle_usb_icl_change(int irq, void *data)
 {
 	struct smb_chip *chip = data;
@@ -735,6 +789,7 @@ static const struct power_supply_desc smb_psy_desc = {
 	.get_property = smb_get_property,
 	.set_property = smb_set_property,
 	.property_is_writeable = smb_property_is_writable,
+	.external_power_changed = smb_external_power_changed,
 };
 
 /* Init sequence derived from vendor downstream driver */
@@ -996,6 +1051,13 @@ static int smb_set_float_voltage(struct smb_chip *chip, int uv)
 				  FLOAT_VOLTAGE_SETTING_MASK, val);
 }
 
+static void smb_disable_status_work(void *data)
+{
+	struct smb_chip *chip = data;
+
+	disable_delayed_work_sync(&chip->status_change_work);
+}
+
 static int smb_probe(struct platform_device *pdev)
 {
 	struct power_supply_config supply_config = {};
@@ -1061,6 +1123,13 @@ static int smb_probe(struct platform_device *pdev)
 					     "Couldn't configure termination\n");
 	}
 
+	/*
+	 * The supplier and the interrupts can schedule the work as soon as
+	 * the power supply is registered; run it only once probe completes.
+	 */
+	INIT_DELAYED_WORK(&chip->status_change_work, smb_status_change_work);
+	disable_delayed_work(&chip->status_change_work);
+
 	supply_config.drv_data = chip;
 	supply_config.fwnode = dev_fwnode(&pdev->dev);
 
@@ -1080,16 +1149,15 @@ static int smb_probe(struct platform_device *pdev)
 		return dev_err_probe(chip->dev, PTR_ERR(chip->chg_psy),
 				     "failed to register power supply\n");
 
+	/* Stop the work before the power supply is unregistered */
+	rc = devm_add_action_or_reset(chip->dev, smb_disable_status_work, chip);
+	if (rc)
+		return rc;
+
 	rc = power_supply_get_battery_info(chip->chg_psy, &chip->batt_info);
 	if (rc)
 		return dev_err_probe(chip->dev, rc,
 				     "Failed to get battery info\n");
-
-	rc = devm_delayed_work_autocancel(chip->dev, &chip->status_change_work,
-					  smb_status_change_work);
-	if (rc)
-		return dev_err_probe(chip->dev, rc,
-				     "Failed to init status change work\n");
 
 	rc = smb_set_float_voltage(chip, chip->batt_info->voltage_max_design_uv);
 	if (rc < 0)
@@ -1141,6 +1209,7 @@ static int smb_probe(struct platform_device *pdev)
 				     "Couldn't write fast AICL rerun time");
 
 	/* Initialise charger state */
+	enable_delayed_work(&chip->status_change_work);
 	schedule_delayed_work(&chip->status_change_work, 0);
 
 	return 0;
