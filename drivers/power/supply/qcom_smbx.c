@@ -15,6 +15,7 @@
 #include <linux/kernel.h>
 #include <linux/minmax.h>
 #include <linux/module.h>
+#include <linux/mutex.h>
 #include <linux/platform_device.h>
 #include <linux/pm_wakeirq.h>
 #include <linux/of.h>
@@ -204,6 +205,8 @@ struct smb_init_register {
  * @regmap:		Register map
  * @batt_info:		Battery data from DT
  * @status_change_work: Worker to handle plug/unplug events
+ * @lock:		Serialises setting the input current limit
+ * @attach_gen:		Count of cable events, protected by @lock
  * @cable_irq:		USB plugin IRQ
  * @wakeup_enabled:	If the cable IRQ will cause a wakeup
  * @usb_in_i_chan:	USB_IN current measurement channel
@@ -219,6 +222,8 @@ struct smb_chip {
 	enum smb_generation gen;
 
 	struct delayed_work status_change_work;
+	struct mutex lock;
+	unsigned int attach_gen;
 	int cable_irq;
 	bool wakeup_enabled;
 
@@ -413,12 +418,16 @@ static int smb_set_current_limit(struct smb_chip *chip, unsigned int val)
 
 static void smb_status_change_work(struct work_struct *work)
 {
-	unsigned int charger_type, current_ua;
+	unsigned int charger_type, current_ua, attach_gen;
 	int usb_online = 0;
 	int count, rc;
 	struct smb_chip *chip;
 
 	chip = container_of(work, struct smb_chip, status_change_work.work);
+
+	mutex_lock(&chip->lock);
+	attach_gen = chip->attach_gen;
+	mutex_unlock(&chip->lock);
 
 	smb_get_prop_usb_online(chip, &usb_online);
 	if (!usb_online)
@@ -459,7 +468,14 @@ static void smb_status_change_work(struct work_struct *work)
 		break;
 	}
 
-	smb_set_current_limit(chip, current_ua);
+	mutex_lock(&chip->lock);
+	/*
+	 * Don't apply a limit found for a source that has been unplugged
+	 * since; the cable event has scheduled the work again.
+	 */
+	if (attach_gen == chip->attach_gen)
+		smb_set_current_limit(chip, current_ua);
+	mutex_unlock(&chip->lock);
 	power_supply_changed(chip->chg_psy);
 }
 
@@ -608,13 +624,17 @@ static int smb_set_property(struct power_supply *psy,
 			     const union power_supply_propval *val)
 {
 	struct smb_chip *chip = power_supply_get_drvdata(psy);
+	int rc;
 
 	switch (psp) {
 	case POWER_SUPPLY_PROP_STATUS:
 		return regmap_update_bits(chip->regmap, chip->base + USBIN_CMD_IL,
 					  USBIN_SUSPEND_BIT, !val->intval);
 	case POWER_SUPPLY_PROP_CURRENT_MAX:
-		return smb_set_current_limit(chip, val->intval);
+		mutex_lock(&chip->lock);
+		rc = smb_set_current_limit(chip, val->intval);
+		mutex_unlock(&chip->lock);
+		return rc;
 	default:
 		dev_err(chip->dev, "No setter for property: %d\n", psp);
 		return -EINVAL;
@@ -649,6 +669,18 @@ static irqreturn_t smb_handle_batt_overvoltage(int irq, void *data)
 static irqreturn_t smb_handle_usb_plugin(int irq, void *data)
 {
 	struct smb_chip *chip = data;
+
+	/*
+	 * The SMB5 chargers apply the limit set by software once the source
+	 * is detected. Return to the limit for a USB 2.0 port until the work
+	 * sets one for the new source, rather than keep that of the last.
+	 */
+	if (chip->gen == SMB5) {
+		mutex_lock(&chip->lock);
+		chip->attach_gen++;
+		smb_set_current_limit(chip, SDP_CURRENT_UA);
+		mutex_unlock(&chip->lock);
+	}
 
 	power_supply_changed(chip->chg_psy);
 
@@ -958,6 +990,10 @@ static int smb_probe(struct platform_device *pdev)
 
 	chip->dev = &pdev->dev;
 	chip->name = pdev->name;
+
+	rc = devm_mutex_init(chip->dev, &chip->lock);
+	if (rc)
+		return rc;
 
 	chip->regmap = dev_get_regmap(pdev->dev.parent, NULL);
 	if (!chip->regmap)
