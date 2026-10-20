@@ -42,6 +42,8 @@ properties:
 
   monitored-battery: true
 
+  power-supplies: true
+
 required:
   - compatible
   - reg
