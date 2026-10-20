@@ -924,11 +924,6 @@
 	};
 };
 
-&pm8150b_fg {
-	status = "okay";
-	monitored-battery = <&battery>;
-	power-supplies = <&pm8150b_charger>;
-};
 &pm8150b_charger {
 	status = "okay";
 	monitored-battery = <&battery>;
@@ -1272,6 +1267,8 @@
 
 		interrupt-parent = <&spmi_bus>;
 		interrupts = <0x2 0xc7 0x0 IRQ_TYPE_LEVEL_LOW>;
+
+		power-supplies = <&pm8150b_charger>;
 	};
 };
 
