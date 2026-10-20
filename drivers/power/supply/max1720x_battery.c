@@ -270,6 +270,7 @@ static const enum power_supply_property max1720x_battery_props[] = {
 	POWER_SUPPLY_PROP_CURRENT_NOW,
 	POWER_SUPPLY_PROP_CURRENT_AVG,
 	POWER_SUPPLY_PROP_CHARGE_FULL,
+	POWER_SUPPLY_PROP_CYCLE_COUNT,
 	POWER_SUPPLY_PROP_MODEL_NAME,
 	POWER_SUPPLY_PROP_MANUFACTURER,
 };
@@ -279,6 +280,11 @@ static const enum power_supply_property max1720x_battery_props[] = {
 static int max172xx_time_to_ps(unsigned int reg)
 {
 	return reg * 5625 / 1000;	/* in sec. */
+}
+
+static int max172xx_cycles_to_ps(unsigned int reg)
+{
+	return reg * 16 / 100;	/* LSB is 16% of a cycle */
 }
 
 static int max172xx_percent_to_ps(unsigned int reg)
@@ -445,6 +451,12 @@ static int max1720x_battery_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_CHARGE_FULL:
 		ret = regmap_read(info->regmap, MAX172XX_FULL_CAP_REP, &reg_val);
 		val->intval = max172xx_capacity_to_ps(reg_val, info);
+		break;
+	case POWER_SUPPLY_PROP_CYCLE_COUNT:
+		ret = regmap_read(info->regmap, MAX172XX_CYCLES, &reg_val);
+		if (ret)
+			return ret;
+		val->intval = max172xx_cycles_to_ps(reg_val);
 		break;
 	case POWER_SUPPLY_PROP_MODEL_NAME:
 		ret = regmap_read(info->regmap, MAX172XX_DEV_NAME, &reg_val);
