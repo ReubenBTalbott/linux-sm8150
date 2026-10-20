@@ -81,6 +81,9 @@ enum smb_generation {
 #define SMB5_CHARGE_RCHG_SOC_THRESHOLD_CFG_REG		0x7D
 #define SMB5_CHARGE_RCHG_SOC_THRESHOLD_CFG_MASK		GENMASK(7, 0)
 
+#define SMB5_ADC_TERM_CFG				0x6C
+#define SMB5_TERM_BASED_ON_SAMPLE_CNT_BIT		BIT(0)
+
 #define OTG_CFG						0x153
 #define OTG_EN_SRC_CFG_BIT				BIT(1)
 
@@ -236,6 +239,7 @@ struct smb_chip {
 struct smb_match_data {
 	const char *name;
 	enum smb_generation gen;
+	bool term_on_sample_count;
 	size_t init_seq_len;
 	const struct smb_init_register *init_seq;
 };
@@ -916,6 +920,7 @@ struct smb_match_data pm8150b_match_data = {
 	.init_seq_len = ARRAY_SIZE(smb5_init_seq),
 	.name = "pm8150b",
 	.gen = SMB5,
+	.term_on_sample_count = true,
 };
 
 struct smb_match_data pm7250b_match_data = {
@@ -1040,6 +1045,21 @@ static int smb_probe(struct platform_device *pdev)
 	rc = smb_init_hw(chip, match_data->init_seq, match_data->init_seq_len);
 	if (rc < 0)
 		return rc;
+
+	/*
+	 * Terminate once a number of ADC samples are within the termination
+	 * thresholds rather than on synchronous conversions, as the vendor
+	 * driver does on the PM8150B.
+	 */
+	if (match_data->term_on_sample_count) {
+		rc = regmap_update_bits(chip->regmap,
+					chip->base + SMB5_ADC_TERM_CFG,
+					SMB5_TERM_BASED_ON_SAMPLE_CNT_BIT,
+					SMB5_TERM_BASED_ON_SAMPLE_CNT_BIT);
+		if (rc < 0)
+			return dev_err_probe(chip->dev, rc,
+					     "Couldn't configure termination\n");
+	}
 
 	supply_config.drv_data = chip;
 	supply_config.fwnode = dev_fwnode(&pdev->dev);
