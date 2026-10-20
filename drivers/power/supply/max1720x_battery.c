@@ -261,6 +261,7 @@ static const enum power_supply_property max1720x_battery_props[] = {
 	POWER_SUPPLY_PROP_CAPACITY,
 	POWER_SUPPLY_PROP_VOLTAGE_NOW,
 	POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN,
+	POWER_SUPPLY_PROP_CHARGE_NOW,
 	POWER_SUPPLY_PROP_CHARGE_AVG,
 	POWER_SUPPLY_PROP_TIME_TO_EMPTY_AVG,
 	POWER_SUPPLY_PROP_TIME_TO_FULL_AVG,
@@ -405,6 +406,7 @@ static int max1720x_battery_get_property(struct power_supply *psy,
 		ret = regmap_read(info->regmap, MAX172XX_DESIGN_CAP, &reg_val);
 		val->intval = max172xx_capacity_to_ps(reg_val, info);
 		break;
+	case POWER_SUPPLY_PROP_CHARGE_NOW:
 	case POWER_SUPPLY_PROP_CHARGE_AVG:
 		ret = regmap_read(info->regmap, MAX172XX_REPCAP, &reg_val);
 		val->intval = max172xx_capacity_to_ps(reg_val, info);
