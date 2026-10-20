@@ -255,6 +255,7 @@ static const struct nvmem_cell_info max1720x_nvmem_cells[] = {
 };
 
 static const enum power_supply_property max1720x_battery_props[] = {
+	POWER_SUPPLY_PROP_STATUS,
 	POWER_SUPPLY_PROP_HEALTH,
 	POWER_SUPPLY_PROP_PRESENT,
 	POWER_SUPPLY_PROP_CAPACITY,
@@ -367,6 +368,13 @@ static int max1720x_battery_get_property(struct power_supply *psy,
 	int ret = 0;
 
 	switch (psp) {
+	case POWER_SUPPLY_PROP_STATUS:
+		ret = power_supply_get_property_from_supplier(psy, psp, val);
+		if (ret == -ENODEV) {
+			val->intval = POWER_SUPPLY_STATUS_UNKNOWN;
+			ret = 0;
+		}
+		break;
 	case POWER_SUPPLY_PROP_HEALTH:
 		ret = max172xx_battery_health(info, &reg_val);
 		val->intval = reg_val;
@@ -579,6 +587,7 @@ static const struct power_supply_desc max1720x_bat_desc = {
 	.properties = max1720x_battery_props,
 	.num_properties = ARRAY_SIZE(max1720x_battery_props),
 	.get_property = max1720x_battery_get_property,
+	.external_power_changed = power_supply_changed,
 };
 
 static int max1720x_probe(struct i2c_client *client)
