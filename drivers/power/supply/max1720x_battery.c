@@ -39,7 +39,6 @@
 #define MAX172XX_TEMP			0x08	/* Temperature */
 #define MAX172XX_CURRENT		0x0A	/* Actual current */
 #define MAX172XX_AVG_CURRENT		0x0B	/* Average current */
-#define MAX172XX_FULL_CAP		0x10	/* Calculated full capacity */
 #define MAX172XX_TTE			0x11	/* Time to empty */
 #define MAX172XX_AVG_TA			0x16	/* Average temperature */
 #define MAX172XX_CYCLES			0x17
@@ -51,6 +50,7 @@
 #define MAX172XX_DEV_NAME_TYPE_MAX17201	BIT(0)
 #define MAX172XX_DEV_NAME_TYPE_MAX17205	(BIT(0) | BIT(2))
 #define MAX172XX_QR_TABLE10		0x22
+#define MAX172XX_FULL_CAP_REP		0x35	/* Reported full capacity */
 #define MAX172XX_BATT			0xDA	/* Battery voltage */
 #define MAX172XX_ATAVCAP		0xDF
 
@@ -430,7 +430,7 @@ static int max1720x_battery_get_property(struct power_supply *psy,
 		val->intval = max172xx_current_to_voltage(reg_val) / info->rsense;
 		break;
 	case POWER_SUPPLY_PROP_CHARGE_FULL:
-		ret = regmap_read(info->regmap, MAX172XX_FULL_CAP, &reg_val);
+		ret = regmap_read(info->regmap, MAX172XX_FULL_CAP_REP, &reg_val);
 		val->intval = max172xx_capacity_to_ps(reg_val, info);
 		break;
 	case POWER_SUPPLY_PROP_MODEL_NAME:
