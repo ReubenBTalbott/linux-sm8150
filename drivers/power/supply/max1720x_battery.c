@@ -346,11 +346,11 @@ static int max172xx_battery_health(struct max1720x_device_info *info,
 
 	/* Clear events which are not self-clearing to detect next events */
 	if (status > 0 && status != MAX172XX_STATUS_IMX) {
-		ret = regmap_set_bits(info->regmap, MAX172XX_STATUS,
-				      MAX172XX_STATUS_VMN |
-				      MAX172XX_STATUS_VMX |
-				      MAX172XX_STATUS_TMN |
-				      MAX172XX_STATUS_TMX);
+		ret = regmap_clear_bits(info->regmap, MAX172XX_STATUS,
+					MAX172XX_STATUS_VMN |
+					MAX172XX_STATUS_VMX |
+					MAX172XX_STATUS_TMN |
+					MAX172XX_STATUS_TMX);
 		if (ret < 0)
 			return ret;
 	}
