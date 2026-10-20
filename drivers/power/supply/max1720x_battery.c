@@ -9,6 +9,7 @@
 
 #include <linux/bitfield.h>
 #include <linux/i2c.h>
+#include <linux/limits.h>
 #include <linux/module.h>
 #include <linux/nvmem-provider.h>
 #include <linux/power_supply.h>
@@ -413,10 +414,20 @@ static int max1720x_battery_get_property(struct power_supply *psy,
 		break;
 	case POWER_SUPPLY_PROP_TIME_TO_EMPTY_AVG:
 		ret = regmap_read(info->regmap, MAX172XX_TTE, &reg_val);
+		if (ret)
+			return ret;
+		/* Treat a full-scale reading as unavailable */
+		if (reg_val == U16_MAX)
+			return -ENODATA;
 		val->intval = max172xx_time_to_ps(reg_val);
 		break;
 	case POWER_SUPPLY_PROP_TIME_TO_FULL_AVG:
 		ret = regmap_read(info->regmap, MAX172XX_TTF, &reg_val);
+		if (ret)
+			return ret;
+		/* Treat a full-scale reading as unavailable */
+		if (reg_val == U16_MAX)
+			return -ENODATA;
 		val->intval = max172xx_time_to_ps(reg_val);
 		break;
 	case POWER_SUPPLY_PROP_TEMP:
