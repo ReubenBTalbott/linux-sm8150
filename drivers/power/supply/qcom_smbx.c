@@ -69,6 +69,9 @@ enum smb_generation {
 
 #define FLOAT_VOLTAGE_CFG				0x70
 #define FLOAT_VOLTAGE_SETTING_MASK			GENMASK(7, 0)
+#define SMB5_FLOAT_VOLTAGE_MIN_UV			3600000
+#define SMB5_FLOAT_VOLTAGE_MAX_UV			4790000
+#define SMB5_FLOAT_VOLTAGE_STEP_UV			10000
 
 #define SMB2_FG_UPDATE_CFG_2_SEL			0x7D
 #define SMB2_SOC_LT_CHG_RECHARGE_THRESH_SEL_BIT		BIT(2)
@@ -918,6 +921,29 @@ static int smb_init_irq(struct smb_chip *chip, int *irq, const char *name,
 	return 0;
 }
 
+static int smb_set_float_voltage(struct smb_chip *chip, int uv)
+{
+	unsigned int val;
+
+	switch (chip->gen) {
+	case SMB2:
+		val = (uv - 3487500) / 7500 + 1;
+		break;
+	case SMB5:
+		if (uv < SMB5_FLOAT_VOLTAGE_MIN_UV ||
+		    uv > SMB5_FLOAT_VOLTAGE_MAX_UV)
+			return -EINVAL;
+		val = (uv - SMB5_FLOAT_VOLTAGE_MIN_UV) /
+		      SMB5_FLOAT_VOLTAGE_STEP_UV;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return regmap_update_bits(chip->regmap, chip->base + FLOAT_VOLTAGE_CFG,
+				  FLOAT_VOLTAGE_SETTING_MASK, val);
+}
+
 static int smb_probe(struct platform_device *pdev)
 {
 	struct power_supply_config supply_config = {};
@@ -994,9 +1020,7 @@ static int smb_probe(struct platform_device *pdev)
 		return dev_err_probe(chip->dev, rc,
 				     "Failed to init status change work\n");
 
-	rc = (chip->batt_info->voltage_max_design_uv - 3487500) / 7500 + 1;
-	rc = regmap_update_bits(chip->regmap, chip->base + FLOAT_VOLTAGE_CFG,
-				FLOAT_VOLTAGE_SETTING_MASK, rc);
+	rc = smb_set_float_voltage(chip, chip->batt_info->voltage_max_design_uv);
 	if (rc < 0)
 		return dev_err_probe(chip->dev, rc, "Couldn't set vbat max\n");
 
